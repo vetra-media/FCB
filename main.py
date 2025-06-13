@@ -57,6 +57,9 @@ import asyncio
 from dotenv import load_dotenv
 from pathlib import Path
 from telegram.ext import ApplicationBuilder
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from pytz import timezone
+import aiohttp
 
 # Load environment variables
 load_dotenv()
@@ -70,16 +73,6 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
-print("Setting up logging...")
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
-    level=logging.INFO
-)
-print("Logging configured")  # <--- ADD THIS
-logger = logging.getLogger(__name__)
-print("Logger created")      # <--- ADD THIS
-
 
 async def start_bot_only():
     """Start just the bot without background tasks first"""
@@ -125,73 +118,116 @@ async def start_bot_only():
         logger.error(f"❌ Bot start failed: {e}")
         return None
 
+async def ping_render_service():
+    """Keep the service active by making an external request"""
+    try:
+        # Just ping a reliable external service to generate activity
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://httpbin.org/status/200", timeout=10) as response:
+                if response.status == 200:
+                    logger.info("✅ Keep-alive ping successful")
+                else:
+                    logger.warning(f"⚠️ Keep-alive ping returned status {response.status}")
+                    
+    except Exception as e:
+        logger.error(f"❌ Keep-alive ping failed: {e}")
+        # Don't raise the exception - just log it so the scheduler continues
+
 async def start_background_tasks(app):
     print("=== ENTERED start_background_tasks() ===")
     """Start background tasks after bot is confirmed working"""
     logger.info("🔄 Starting background tasks...")
     
     tasks = []
+    scheduler = None
     
     try:
-        print("About to start bot polling...")  # <-- ADD THIS
+        print("About to start bot polling...")
         # Start polling (this keeps the bot responsive)
         logger.info("🔄 Starting bot polling...")
         polling_task = asyncio.create_task(app.updater.start_polling())
         tasks.append(polling_task)
         logger.info("✅ Bot polling started")
-        print("Bot polling started successfully")  # <-- ADD THIS
+        print("Bot polling started successfully")
         
         # Small delay to let polling establish
         await asyncio.sleep(2)
-        print("After polling delay")  # <-- ADD THIS
+        print("After polling delay")
         
-        print("About to start cache system...")  # <-- ADD THIS
+        print("About to start cache system...")
         # Start cache system
         logger.info("🔄 Starting cache system...")
         cache_task = asyncio.create_task(init_ultra_fast_cache())
         tasks.append(cache_task)
         logger.info("✅ Cache task started")
-        print("Cache task started successfully")  # <-- ADD THIS
+        print("Cache task started successfully")
         
         # Another small delay
         await asyncio.sleep(1)
-        print("After cache delay")  # <-- ADD THIS
+        print("After cache delay")
         
-        print("About to start FOMO scanner...")  # <-- ADD THIS
-        # Start FOMO scanner
-        logger.info("🔄 Starting FOMO scanner...")
-        scanner_task = asyncio.create_task(periodic_fomo_scan(app.bot))
-        tasks.append(scanner_task)
-        logger.info("✅ Scanner task started")
-        print("Scanner task started successfully")  # <-- ADD THIS
+        # Start scheduled FOMO broadcasts (6am, 2pm, 10pm IST) - ONLY ONCE
+        print("About to start scheduled FOMO alerts...")
+        logger.info("🕒 Setting up scheduled FOMO alerts...")
+        scheduler = AsyncIOScheduler(timezone=timezone("Asia/Kolkata"))
+        scheduler.add_job(
+            periodic_fomo_scan,
+            'cron', 
+            hour='6,14,22',
+            args=[app.bot]
+        )
         
+        # Add ping job to keep Render service awake
+        scheduler.add_job(
+            ping_render_service,
+            'interval', 
+            minutes=14  # Ping every 14 minutes to keep service awake
+        )
+
+        scheduler.start()
+        logger.info("✅ Scheduler started for 6am, 2pm, and 10pm IST")
+        logger.info("✅ Ping service started (every 14 minutes)")
+
+        # Run initial FOMO scan on startup
+        try:
+            logger.info("🔄 Running initial FOMO scan on startup...")
+            await periodic_fomo_scan(app.bot)
+            logger.info("✅ Initial FOMO scan completed")
+        except Exception as e:
+            logger.error(f"❌ Initial FOMO scan failed: {e}")
+
         logger.info("🎯 All systems operational! Bot ready for commands.")
-        print("All systems operational, returning tasks")  # <-- ADD THIS
+        print("All systems operational, returning tasks")
         
-        return tasks
+        return tasks, scheduler  # Return scheduler so it can be managed
         
     except Exception as e:
-        print(f"Exception in start_background_tasks: {e}")  # <-- ADD THIS
+        print(f"Exception in start_background_tasks: {e}")
         logger.error(f"❌ Background task startup failed: {e}")
+        
+        # Clean up scheduler if it was created
+        if scheduler:
+            scheduler.shutdown()
+        
         # Cancel any tasks that were started
         for task in tasks:
             if not task.done():
                 task.cancel()
-        return []
+        return [], None
 
 async def main():
     print("Entered main()")
     print("About to call start_bot_only()")
     app = await start_bot_only()
     print(f"Returned from start_bot_only(), app = {app}")
-    print("Returned from start_bot_only()")
     if not app:
         print("No app, exiting main()")
         return
 
     print("About to call start_background_tasks()")
-    tasks = await start_background_tasks(app)
+    tasks, scheduler = await start_background_tasks(app)
     print("Returned from start_background_tasks()")
+    
     if not tasks:
         print("No tasks, stopping app")
         await app.stop()
@@ -199,10 +235,16 @@ async def main():
 
     print("Running background tasks...")
     print("🎯 Bot is now running! Press Ctrl+C to stop.")
+    
     try:
         await asyncio.gather(*tasks)
     except Exception as e:
         print(f"Exception in main: {e}")
+    finally:
+        # Clean shutdown
+        if scheduler:
+            scheduler.shutdown()
+        await app.stop()
 
 if __name__ == '__main__':
     try:

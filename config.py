@@ -23,7 +23,7 @@ print(f"  • ENV_MODE: {ENV_MODE}")
 print(f"  • TEST_MODE: {os.getenv('TEST_MODE')}")
 print(f"  • BOT_TOKEN: {prod_token[:10] + '... (prod)'}" if prod_token else "  • BOT_TOKEN: Not set (prod)")
 print(f"  • TEST_BOT_TOKEN: {test_token[:10] + '... (test)'}" if test_token else "  • TEST_BOT_TOKEN: Not set (test)")
-print(f"  • BROADCAST_CHAT_ID: {os.getenv('TEST_CHAT_ID') if os.getenv('TEST_MODE') == 'True' else os.getenv('CHAT_ID')}")
+print(f"  • BROADCAST_CHAT_ID: {os.getenv('BROADCAST_CHAT_ID')}")
 print(f"  • CoinGecko API Key: {os.getenv('COINGECKO_API_KEY')[:8]}...")
 
 # =============================================================================
@@ -37,7 +37,7 @@ COINGECKO_API_KEY = os.getenv('COINGECKO_API_KEY')
 
 # Chat IDs for different purposes
 INTERACTIVE_CHAT_ID = None  # Will be set per user interaction
-BROADCAST_CHAT_ID = os.getenv('TEST_CHAT_ID') if TEST_MODE else os.getenv('CHAT_ID')
+BROADCAST_CHAT_ID = os.getenv('BROADCAST_CHAT_ID')
 
 # API Configuration
 COINGECKO_API = "https://pro-api.coingecko.com/api/v3"
