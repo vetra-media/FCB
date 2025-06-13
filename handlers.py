@@ -11,12 +11,15 @@ from io import BytesIO
 from telegram import Update, LabeledPrice, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
-
 from database import (
     get_user_balance, 
     spend_fcb_token, 
     add_fcb_tokens, 
-    check_rate_limit_with_fcb
+    check_rate_limit_with_fcb,
+    get_user_balance_detailed,
+    FREE_QUERIES_PER_DAY,
+    NEW_USER_BONUS,
+    get_db_connection
 )
 from config import FCB_STAR_PACKAGES, INSTANT_RESPONSES, INSTANT_SPIN_RESPONSES, FOMO_CACHE
 from api_client import get_coin_info_ultra_fast, get_optimized_session
@@ -102,6 +105,29 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     
     message = format_balance_message(user_balance_info, conversion_hooks=True)
+    await update.message.reply_text(message, parse_mode='HTML')
+
+async def debug_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Debug command to check detailed balance information"""
+    user_id = update.effective_user.id
+    balance_info = get_user_balance_detailed(user_id)
+    
+    if balance_info:
+        message = f"""🔍 <b>Debug Balance Info</b>
+
+👤 <b>User ID:</b> {user_id}
+💎 <b>FCB Balance:</b> {balance_info['fcb_balance']}
+🎯 <b>Free Queries Used:</b> {balance_info['free_queries_used']}/{FREE_QUERIES_PER_DAY}
+🎁 <b>Bonus Used:</b> {balance_info['new_user_bonus_used']}/{NEW_USER_BONUS}
+✅ <b>Bonus Received:</b> {balance_info['has_received_bonus']}
+📊 <b>Total Queries:</b> {balance_info['total_queries']}
+📅 <b>Created:</b> {balance_info['created_at']}
+💰 <b>First Purchase:</b> {balance_info['first_purchase_date'] or 'None'}
+
+🎯 <b>Available Scans:</b> {balance_info['total_free_remaining']} free + {balance_info['fcb_balance']} tokens"""
+    else:
+        message = "❌ Could not retrieve balance information."
+    
     await update.message.reply_text(message, parse_mode='HTML')
 
 async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):  # ✅ CORRECT INDENTATION!
@@ -631,25 +657,87 @@ async def pre_checkout_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.answer(ok=False, error_message="Invalid purchase")
 
 async def payment_success_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle successful Stars payments"""
+    """Handle successful Stars payments - FIXED VERSION"""
     payment = update.message.successful_payment
+    actual_buyer_id = update.effective_user.id  # ✅ Get the actual buyer's ID
+    
+    # Add debug logging
+    logging.info(f"🔍 PAYMENT DEBUG: Buyer ID: {actual_buyer_id}")
+    logging.info(f"🔍 PAYMENT DEBUG: Payload: {payment.invoice_payload}")
+    logging.info(f"🔍 PAYMENT DEBUG: Stars amount: {payment.total_amount}")
+    
+    # Parse payload
     payload_parts = payment.invoice_payload.split("_")
     
     if len(payload_parts) == 3 and payload_parts[0] == "fcb":
         package_key = payload_parts[1]
-        user_id = int(payload_parts[2])
+        payload_user_id = int(payload_parts[2])
+        
+        # ✅ Security check: ensure the buyer matches the payload
+        if actual_buyer_id != payload_user_id:
+            logging.error(f"❌ SECURITY ALERT: Buyer {actual_buyer_id} != Payload {payload_user_id}")
+            await update.message.reply_text(
+                "❌ Payment verification failed. Please contact support.",
+                parse_mode='HTML'
+            )
+            return
         
         if package_key in FCB_STAR_PACKAGES:
             tokens = FCB_STAR_PACKAGES[package_key]['tokens']
             stars = FCB_STAR_PACKAGES[package_key]['stars']
             
-            # Add tokens to user's balance
-            add_fcb_tokens(user_id, tokens)
+            # ✅ Add tokens with verification
+            success, new_balance = add_fcb_tokens(actual_buyer_id, tokens)
             
-            message = format_payment_success_message(tokens, stars)
-            await update.message.reply_text(message, parse_mode='HTML')
-            
-            logging.info(f"User {user_id} bought {tokens} FCB tokens for {stars} Stars")
+            if success:
+                # ✅ Record first purchase date using local import
+                try:
+                    from database import get_db_connection
+                    with get_db_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                            UPDATE users 
+                            SET first_purchase_date = CURRENT_TIMESTAMP 
+                            WHERE user_id = ? AND first_purchase_date IS NULL
+                        ''', (actual_buyer_id,))
+                        conn.commit()
+                except Exception as e:
+                    logging.error(f"Error updating first purchase date: {e}")
+                
+                # ✅ Send success message with balance confirmation
+                message = f"""🎉 <b>Purchase Successful!</b>
+
+💎 <b>{tokens} FCB tokens</b> added to your account!
+⭐ <b>{stars} Stars</b> spent
+
+📊 <b>Your Balance:</b>
+💎 FCB Tokens: <b>{new_balance}</b>
+🎯 FOMO Scans: <b>Unlimited with tokens!</b>
+
+🚀 <b>Ready to scan?</b> Type any coin name to get started!"""
+                
+                await update.message.reply_text(message, parse_mode='HTML')
+                
+                logging.info(f"✅ PAYMENT SUCCESS: User {actual_buyer_id} bought {tokens} FCB tokens for {stars} Stars - New balance: {new_balance}")
+            else:
+                # ✅ Handle database failure
+                logging.error(f"❌ PAYMENT FAILED: Database error for user {actual_buyer_id}")
+                await update.message.reply_text(
+                    "❌ Payment processed but token delivery failed. Please contact support with this transaction ID.",
+                    parse_mode='HTML'
+                )
+        else:
+            logging.error(f"❌ Invalid package key: {package_key}")
+            await update.message.reply_text(
+                "❌ Invalid purchase package. Please contact support.",
+                parse_mode='HTML'
+            )
+    else:
+        logging.error(f"❌ Invalid payment payload: {payment.invoice_payload}")
+        await update.message.reply_text(
+            "❌ Payment verification failed. Please contact support.",
+            parse_mode='HTML'
+        )
 
 # =============================================================================
 # ERROR HANDLER
@@ -686,6 +774,7 @@ def setup_handlers(app):
     app.add_handler(CommandHandler('start', start_command))
     app.add_handler(CommandHandler('help', help_command))
     app.add_handler(CommandHandler('buy', buy_command))
+    app.add_handler(CommandHandler('debug', debug_balance_command))
     app.add_handler(CommandHandler('balance', balance_command))
     app.add_handler(CommandHandler('test', test_command))
     app.add_handler(CommandHandler('status', status_command))

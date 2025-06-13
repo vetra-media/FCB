@@ -169,20 +169,39 @@ def spend_fcb_token(user_id):
         return False, "❌ Database error. Please try again."
 
 def add_fcb_tokens(user_id, amount):
-    """Add FCB tokens to user's balance"""
+    """Add FCB tokens to user's balance with better error handling"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
+            
+            # Ensure user exists
             cursor.execute('''
                 INSERT OR IGNORE INTO users (user_id) VALUES (?)
             ''', (user_id,))
+            
+            # Get current balance for logging
+            cursor.execute('SELECT fcb_balance FROM users WHERE user_id = ?', (user_id,))
+            result = cursor.fetchone()
+            old_balance = result[0] if result else 0
+            
+            # Add tokens
             cursor.execute('''
                 UPDATE users SET fcb_balance = fcb_balance + ? WHERE user_id = ?
             ''', (amount, user_id))
+            
+            # Verify the update worked
+            cursor.execute('SELECT fcb_balance FROM users WHERE user_id = ?', (user_id,))
+            result = cursor.fetchone()
+            new_balance = result[0] if result else 0
+            
             conn.commit()
             
+            logging.info(f"✅ FCB tokens added: User {user_id}, {old_balance} → {new_balance} (+{amount})")
+            return True, new_balance
+            
     except Exception as e:
-        logging.error(f"Database error in add_fcb_tokens: {e}")
+        logging.error(f"❌ Database error in add_fcb_tokens: {e}")
+        return False, 0
 
 def check_rate_limit_with_fcb(user_id, rate_limit_seconds=1):
     """Optimized rate limiting - reduced to 1 second"""
@@ -208,3 +227,55 @@ def check_rate_limit_with_fcb(user_id, rate_limit_seconds=1):
     else:
         time_remaining = rate_limit_seconds - time_since_last
         return False, int(time_remaining), "Rate limited"
+    
+def get_user_balance_detailed(user_id):
+    """Get detailed user balance for debugging"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Reset free queries daily
+            cursor.execute('''
+                UPDATE users 
+                SET free_queries_used = 0, last_free_reset = CURRENT_DATE 
+                WHERE user_id = ? AND last_free_reset < CURRENT_DATE
+            ''', (user_id,))
+            
+            # Create new user with bonus
+            cursor.execute('''
+                INSERT OR IGNORE INTO users (user_id, has_received_bonus) VALUES (?, FALSE)
+            ''', (user_id,))
+            
+            cursor.execute('''
+                SELECT fcb_balance, free_queries_used, new_user_bonus_used, 
+                       has_received_bonus, total_queries, created_at, first_purchase_date
+                FROM users WHERE user_id = ?
+            ''', (user_id,))
+            
+            result = cursor.fetchone()
+            conn.commit()
+            
+            if result:
+                fcb_balance, free_queries_used, new_user_bonus_used, has_received_bonus, total_queries, created_at, first_purchase_date = result
+                
+                # Calculate available queries
+                daily_remaining = max(0, FREE_QUERIES_PER_DAY - free_queries_used)
+                bonus_remaining = max(0, NEW_USER_BONUS - new_user_bonus_used) if not has_received_bonus else 0
+                total_free_remaining = daily_remaining + bonus_remaining
+                
+                return {
+                    'fcb_balance': fcb_balance,
+                    'free_queries_used': free_queries_used,
+                    'new_user_bonus_used': new_user_bonus_used,
+                    'total_free_remaining': total_free_remaining,
+                    'has_received_bonus': has_received_bonus,
+                    'total_queries': total_queries,
+                    'created_at': created_at,
+                    'first_purchase_date': first_purchase_date
+                }
+            
+            return None
+            
+    except Exception as e:
+        logging.error(f"Database error in get_user_balance_detailed: {e}")
+        return None
