@@ -1,0 +1,16 @@
+name: 🚀 Deploy to Render on Push
+
+on:
+  push:
+    branches:
+      - main  # or change to 'master' if that's your default branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🔄 Trigger Render Deployment Hook
+        run: |
+          curl -X GET "https://api.render.com/deploy/srv-d104tn6mcj7s7387a9l0?key=fNlxGYmS5WY"
+
