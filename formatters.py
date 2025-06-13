@@ -298,6 +298,9 @@ Thank you for supporting FOMO Crypto Bot! 🚀"""
 
 def build_addictive_buttons(coin, user_balance_info=None):
     """Create addictive buttons"""
+    # If no balance info provided, just show buttons without balance text
+    balance_text = ""
+    
     if user_balance_info:
         remaining = user_balance_info.get('total_free_remaining', 0)
         if remaining > 0:
@@ -306,8 +309,6 @@ def build_addictive_buttons(coin, user_balance_info=None):
             balance_text = f" ({user_balance_info['fcb_balance']} FCB)"
         else:
             balance_text = " (0 left)"
-    else:
-        balance_text = ""
     
     coin_id = coin.get('id', 'unknown')
     safe_coin_id = coin_id[:50] if len(coin_id) > 50 else coin_id
