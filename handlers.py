@@ -241,23 +241,41 @@ async def handle_instant_update(query, context, coin_id, user_id):
     # Spend the query first
     success, spend_message = spend_fcb_token(user_id)
     if not success:
-        await query.edit_message_text(spend_message, parse_mode='HTML')
-        return
-    
-# INSTANT visual feedback
-    instant_msg = random.choice(INSTANT_SPIN_RESPONSES)
-    try:
-        await query.edit_message_text(f"🎰 <b>{instant_msg}</b>", parse_mode='HTML')
-    except Exception as e:
-        if "no text in the message to edit" in str(e).lower():
-            # If the original message has no text, send a new message instead
+        try:
+            await query.edit_message_text(spend_message, parse_mode='HTML')
+        except Exception:
+            # If can't edit, send new message
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
-                text=f"🎰 <b>{instant_msg}</b>",
+                text=spend_message,
                 parse_mode='HTML'
             )
+        return
+    
+    # INSTANT visual feedback with better error handling
+    instant_msg = random.choice(INSTANT_SPIN_RESPONSES)
+    try:
+        # Try to edit the message text first
+        await query.edit_message_text(f"🎰 <b>{instant_msg}</b>", parse_mode='HTML')
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "no text in the message to edit" in error_msg:
+            # Message is probably a photo - try editing caption instead
+            try:
+                await query.edit_message_caption(caption=f"🎰 <b>{instant_msg}</b>", parse_mode='HTML')
+            except Exception:
+                # If that fails too, delete and send new message
+                try:
+                    await query.message.delete()
+                except Exception:
+                    pass  # Message might already be deleted
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=f"🎰 <b>{instant_msg}</b>",
+                    parse_mode='HTML'
+                )
         else:
-            # For other errors, still try to answer the callback
+            # For other errors, just answer the callback
             await query.answer("Processing...")
     
     try:
@@ -265,7 +283,15 @@ async def handle_instant_update(query, context, coin_id, user_id):
         coin_id, coin = await get_coin_info_ultra_fast(coin_id)
         
         if not coin:
-            await query.edit_message_text("❌ Unable to fetch updated data. Coin may have been delisted.")
+            error_message = "❌ Unable to fetch updated data. Coin may have been delisted."
+            try:
+                await query.edit_message_text(error_message, parse_mode='HTML')
+            except Exception:
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=error_message,
+                    parse_mode='HTML'
+                )
             return
         
         # Show basic info immediately
@@ -286,7 +312,15 @@ async def handle_instant_update(query, context, coin_id, user_id):
 
 ⚡ <i>Running ULTRA-FAST analysis...</i>"""
         
-        await query.edit_message_text(quick_msg, parse_mode='HTML')
+        try:
+            await query.edit_message_text(quick_msg, parse_mode='HTML')
+        except Exception:
+            # If edit fails, send new message
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=quick_msg,
+                parse_mode='HTML'
+            )
         
         # Run ULTRA-FAST parallel analysis
         fomo_score, signal_type, trend_status, distribution_status, volume_spike = await calculate_fomo_status_ultra_fast(coin)
@@ -296,15 +330,43 @@ async def handle_instant_update(query, context, coin_id, user_id):
         msg += f"\n\n🔄 <i>Updated: {get_simple_timestamp()}</i>"
         msg += f"\n💰 <i>{spend_message}</i>"
         
-        keyboard = build_addictive_buttons(coin)
+        # Get user balance for buttons
+        fcb_balance, free_queries_used, new_user_bonus_used, total_free_remaining, has_received_bonus = get_user_balance(user_id)
+        user_balance_info = {
+            'fcb_balance': fcb_balance,
+            'free_queries_used': free_queries_used,
+            'new_user_bonus_used': new_user_bonus_used,
+            'total_free_remaining': total_free_remaining,
+            'has_received_bonus': has_received_bonus
+        }
         
-        await query.edit_message_text(msg, parse_mode='HTML', reply_markup=keyboard, disable_web_page_preview=True)
+        keyboard = build_addictive_buttons(coin, user_balance_info)
         
-        logging.info(f"✅ ULTRA-FAST refresh complete for {coin_id} - 5x faster than before!")
+        try:
+            await query.edit_message_text(msg, parse_mode='HTML', reply_markup=keyboard, disable_web_page_preview=True)
+        except Exception:
+            # If edit fails, send new message
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=msg,
+                parse_mode='HTML',
+                reply_markup=keyboard,
+                disable_web_page_preview=True
+            )
+        
+        logging.info(f"✅ ULTRA-FAST refresh complete for {coin_id}")
         
     except Exception as e:
         logging.error(f"Error updating coin {coin_id}: {e}")
-        await query.edit_message_text("❌ Error updating data. Please try again.", parse_mode='HTML')
+        error_message = "❌ Error updating data. Please try again."
+        try:
+            await query.edit_message_text(error_message, parse_mode='HTML')
+        except Exception:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=error_message,
+                parse_mode='HTML'
+            )
 
 async def handle_instant_spin(query, context, user_id):
     """Handle the 'NEXT' button with instant treasure discovery"""
