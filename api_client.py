@@ -304,14 +304,15 @@ def fetch_ohlcv_data(coin_id, days=7):
 
 def fetch_from_coingecko(query):
     """Enhanced coin lookup with better error handling"""
-    url_list = 'https://api.coingecko.com/api/v3/coins/list'
+    url_list = 'https://pro-api.coingecko.com/api/v3/coins/list'
     url_data = f"https://pro-api.coingecko.com/api/v3/coins/{{}}"
     
     try:
         # Get coins list with timeout and retries
         for attempt in range(3):
             try:
-                all_coins_response = requests.get(url_list, timeout=15)
+                params = {'x_cg_pro_api_key': COINGECKO_API_KEY}
+                all_coins_response = requests.get(url_list, params=params, timeout=15)
                 all_coins_response.raise_for_status()
                 all_coins = all_coins_response.json()
                 break
