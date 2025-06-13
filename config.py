@@ -3,20 +3,35 @@ Configuration module for CFB (Crypto FOMO Bot)
 Handles environment variables, API settings, and validation
 """
 
+from pathlib import Path
+from dotenv import load_dotenv
 import os
 import logging
 import requests
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Dynamically load the correct .env file based on ENV_MODE
+ENV_MODE = os.getenv('ENV_MODE', 'test')  # default to 'test' if not set
+env_path = Path('.') / f'.env.{ENV_MODE}'
+load_dotenv(dotenv_path=env_path)
+
+prod_token = os.getenv('BOT_TOKEN')
+test_token = os.getenv('TEST_BOT_TOKEN')
+
+print(f"🌍 Loaded environment: {ENV_MODE} ({env_path})")
+print("✅ Config summary:")
+print(f"  • ENV_MODE: {ENV_MODE}")
+print(f"  • TEST_MODE: {os.getenv('TEST_MODE')}")
+print(f"  • BOT_TOKEN: {prod_token[:10] + '... (prod)'}" if prod_token else "  • BOT_TOKEN: Not set (prod)")
+print(f"  • TEST_BOT_TOKEN: {test_token[:10] + '... (test)'}" if test_token else "  • TEST_BOT_TOKEN: Not set (test)")
+print(f"  • BROADCAST_CHAT_ID: {os.getenv('TEST_CHAT_ID') if os.getenv('TEST_MODE') == 'True' else os.getenv('CHAT_ID')}")
+print(f"  • CoinGecko API Key: {os.getenv('COINGECKO_API_KEY')[:8]}...")
 
 # =============================================================================
 # CORE CONFIGURATION
 # =============================================================================
 
 # Bot Configuration
-TEST_MODE = False  # Set to True for testing
+TEST_MODE = os.getenv('TEST_MODE', 'False').lower() == 'true'
 BOT_TOKEN = os.getenv('TEST_BOT_TOKEN') if TEST_MODE else os.getenv('BOT_TOKEN')
 COINGECKO_API_KEY = os.getenv('COINGECKO_API_KEY')
 
@@ -152,9 +167,13 @@ HISTORY_LOG = "fomo_variety_history.csv"
 
 def validate_config():
     """Enhanced validation with specific error reporting"""
+    if TEST_MODE:
+        logging.info("🔧 Running in TEST_MODE - using test bot and test chat ID")
+
     errors = []
     warnings = []
-    
+    ...
+
     # Critical checks
     if not BOT_TOKEN:
         errors.append("BOT_TOKEN is missing - bot cannot start")

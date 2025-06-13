@@ -184,11 +184,26 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 - `/start` - Subscribe to alerts  
 - `/test` - Test notifications
 - `/status` - Show this status
+- `/unsubscribe` - Stop alerts
 - `/buy` - Purchase FCB tokens
 - `/balance` - Check your balance"""
 
     await update.message.reply_text(status_message, parse_mode='HTML')
     logging.info(f"Status command used by {username} (ID: {user_id})")
+
+async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Allow users to unsubscribe from FOMO alerts"""
+    user_id = update.effective_user.id
+    username = update.effective_user.username or "Unknown"
+
+    if user_id in subscribed_users:
+        subscribed_users.remove(user_id)
+        from scanner import save_subscriptions
+        save_subscriptions()
+        await update.message.reply_text("🛑 You’ve been unsubscribed from FOMO alerts.", parse_mode='HTML')
+        logging.info(f"User {username} (ID: {user_id}) unsubscribed from FOMO alerts")
+    else:
+        await update.message.reply_text("ℹ️ You are not currently subscribed.", parse_mode='HTML')
 
 # =============================================================================
 # ULTRA-FAST MESSAGE HANDLERS
@@ -674,6 +689,7 @@ def setup_handlers(app):
     app.add_handler(CommandHandler('balance', balance_command))
     app.add_handler(CommandHandler('test', test_command))
     app.add_handler(CommandHandler('status', status_command))
+    app.add_handler(CommandHandler('unsubscribe', unsubscribe_command))
     
     # Callback query handler for ALL buttons (purchase + addictive buttons)
     app.add_handler(CallbackQueryHandler(handle_callback_queries))

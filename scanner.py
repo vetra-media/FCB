@@ -313,7 +313,7 @@ async def find_top_fomo_coin():
                 continue
                 
             market_cap = coin.get('market_cap', 0)
-            if market_cap is None or market_cap > 50_000_000:
+            if market_cap is None:
                 continue
                 
             # Ensure required fields exist
@@ -428,6 +428,9 @@ async def broadcast_fomo_alert(bot, coin_data):
 
 async def periodic_fomo_scan(bot):
     """Run periodic FOMO scans and broadcast alerts"""
+    logging.info("⏳ Waiting 7 seconds before first FOMO scan...")
+    await asyncio.sleep(7)
+    
     while True:
         try:
             logging.info("Starting periodic FOMO scan...")
@@ -436,7 +439,7 @@ async def periodic_fomo_scan(bot):
             top_coin = await find_top_fomo_coin()
             
             if top_coin:
-                # await broadcast_fomo_alert(bot, top_coin)  # Disabled for bot-only approach
+                await broadcast_fomo_alert(bot, top_coin)
                 
                 # Send to subscribed users (NEW)
                 await send_notification_to_users(bot, top_coin)

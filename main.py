@@ -55,6 +55,7 @@ import os
 import logging
 import asyncio
 from dotenv import load_dotenv
+from pathlib import Path
 from telegram.ext import ApplicationBuilder
 
 # Load environment variables
@@ -102,7 +103,8 @@ async def start_bot_only():
     
     # Build and setup Telegram app
     try:
-        app = ApplicationBuilder().token(BOT_TOKEN).build()
+        token = os.getenv("TEST_BOT_TOKEN") if os.getenv("TEST_MODE") == "True" else BOT_TOKEN
+        app = ApplicationBuilder().token(token).build()
         setup_handlers(app)
         logger.info("✅ Telegram app built and handlers setup")
     except Exception as e:
