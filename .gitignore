@@ -1,0 +1,23 @@
+# Bytecode and cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+env/
+venv/
+cfb_env/
+bin/
+lib/
+include/
+
+# Secrets
+.env
+
+# Database and temp files
+*.db
+*.pkl
+*.csv
+
+# IDE/editor files
+.vscode/
+.DS_Store
