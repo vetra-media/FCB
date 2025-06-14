@@ -17,10 +17,15 @@ NEW_USER_BONUS = 3
 user_last_request = {}
 
 # ✅ FIXED: Use environment variable for database path with fallback
-DATABASE_PATH = os.getenv('DATABASE_PATH', '/opt/render/project/src/fcb_users.db')
+DATABASE_PATH = os.getenv('DATABASE_PATH', '/opt/render/project/fcb_users.db')
 
 # ✅ Ensure database directory exists
-os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
+try:
+    os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
+except Exception as e:
+    # If we can't create the directory, fall back to current directory
+    logging.warning(f"Could not create database directory, using current directory: {e}")
+    DATABASE_PATH = 'fcb_users.db'
 
 @contextmanager
 def get_db_connection():
