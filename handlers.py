@@ -130,7 +130,7 @@ async def debug_balance_command(update: Update, context: ContextTypes.DEFAULT_TY
     
     await update.message.reply_text(message, parse_mode='HTML')
 
-async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):  # ✅ CORRECT INDENTATION!
+async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a test notification to verify the user notification system"""
     user_id = update.effective_user.id
     username = update.effective_user.username or "Unknown"
@@ -226,7 +226,7 @@ async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         subscribed_users.remove(user_id)
         from scanner import save_subscriptions
         save_subscriptions()
-        await update.message.reply_text("🛑 You’ve been unsubscribed from FOMO alerts.", parse_mode='HTML')
+        await update.message.reply_text("🛑 You've been unsubscribed from FOMO alerts.", parse_mode='HTML')
         logging.info(f"User {username} (ID: {user_id}) unsubscribed from FOMO alerts")
     else:
         await update.message.reply_text("ℹ️ You are not currently subscribed.", parse_mode='HTML')
@@ -458,7 +458,7 @@ async def handle_instant_spin(query, context, user_id):
             
             keyboard = build_addictive_buttons(coin)
             
-# Try to send with logo first
+            # Try to send with logo first
             logo_url = coin.get('logo')
             if logo_url:
                 try:
@@ -533,20 +533,68 @@ async def send_coin_message_ultra_fast(update: Update, context: ContextTypes.DEF
     user_id = update.effective_user.id
     query = update.message.text.strip()
     
-    logging.info(f"User {user_id} requested: {query}")
+    logging.info(f"🔍 DEBUG: User {user_id} requested: '{query}'")
     
-    # Check rate limit (now only 1 second!)
+    # ✅ SINGLE rate limit check with detailed logging
     allowed, time_remaining, reason = check_rate_limit_with_fcb(user_id)
+    logging.info(f"🔍 DEBUG: Rate limit check - allowed: {allowed}, reason: '{reason}', time_remaining: {time_remaining}")
     
     if not allowed:
         if reason == "No queries available":
-            message = format_out_of_scans_message(query)
-            keyboard = build_out_of_scans_keyboard(query)
-            await update.message.reply_text(message, parse_mode='HTML', reply_markup=keyboard)
+            logging.info(f"🔍 DEBUG: User {user_id} out of scans - attempting to send out of scans message")
+            try:
+                # ✅ Test the formatters first
+                logging.info(f"🔍 DEBUG: Calling format_out_of_scans_message with query: '{query}'")
+                message = format_out_of_scans_message(query)
+                logging.info(f"🔍 DEBUG: Message formatted successfully: {len(message)} chars")
+                
+                logging.info(f"🔍 DEBUG: Calling build_out_of_scans_keyboard with query: '{query}'")
+                keyboard = build_out_of_scans_keyboard(query)
+                logging.info(f"🔍 DEBUG: Keyboard built successfully")
+                
+                logging.info(f"🔍 DEBUG: Attempting to send message to user {user_id}")
+                await update.message.reply_text(message, parse_mode='HTML', reply_markup=keyboard)
+                logging.info(f"✅ DEBUG: Out of scans message sent successfully to user {user_id}")
+                return
+                
+            except Exception as e:
+                logging.error(f"❌ DEBUG: Failed to send out of scans message to user {user_id}: {e}")
+                logging.error(f"❌ DEBUG: Exception type: {type(e).__name__}")
+                logging.error(f"❌ DEBUG: Exception args: {e.args}")
+                
+                # ✅ Emergency fallback message
+                try:
+                    fallback_message = f"""💔 <b>Out of FOMO Scans!</b>
+
+You've used all your free scans for today.
+
+🎯 <b>Get More Scans:</b>
+• Buy FCB tokens with /buy
+• Get unlimited scans instantly!
+
+💡 <b>Why FCB tokens?</b>
+• No daily limits
+• Instant FOMO analysis
+• Premium features
+
+Type /buy to get started! 🚀"""
+                    
+                    await update.message.reply_text(fallback_message, parse_mode='HTML')
+                    logging.info(f"✅ DEBUG: Fallback message sent to user {user_id}")
+                except Exception as fallback_error:
+                    logging.error(f"❌ DEBUG: Even fallback message failed: {fallback_error}")
         else:
-            countdown_msg = create_countdown_visual(time_remaining)
-            await update.message.reply_text(countdown_msg, parse_mode='HTML')
+            logging.info(f"🔍 DEBUG: User {user_id} rate limited - sending countdown message")
+            try:
+                countdown_msg = create_countdown_visual(time_remaining)
+                await update.message.reply_text(countdown_msg, parse_mode='HTML')
+                logging.info(f"✅ DEBUG: Countdown message sent to user {user_id}")
+            except Exception as e:
+                logging.error(f"❌ DEBUG: Failed to send countdown message: {e}")
         return
+    
+    # Continue with normal processing if user has scans available
+    logging.info(f"🔍 DEBUG: User {user_id} has scans available, proceeding with analysis")
     
     # Spend the query
     success, spend_message = spend_fcb_token(user_id)
