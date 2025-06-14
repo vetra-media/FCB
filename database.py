@@ -6,6 +6,7 @@ Handles user management, FCB tokens, and rate limiting
 import sqlite3
 import time
 import logging
+import os
 from contextlib import contextmanager
 
 # FCB Token Configuration
@@ -15,12 +16,19 @@ NEW_USER_BONUS = 3
 # Rate limiting storage
 user_last_request = {}
 
+# ✅ FIXED: Use environment variable for database path with fallback
+DATABASE_PATH = os.getenv('DATABASE_PATH', '/opt/render/project/src/fcb_users.db')
+
+# ✅ Ensure database directory exists
+os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
+
 @contextmanager
 def get_db_connection():
     """Context manager for database connections"""
     conn = None
     try:
-        conn = sqlite3.connect('fcb_users.db', timeout=30.0)
+        # ✅ FIXED: Use persistent path instead of relative path
+        conn = sqlite3.connect(DATABASE_PATH, timeout=30.0)
         yield conn
     finally:
         if conn:
@@ -29,6 +37,9 @@ def get_db_connection():
 def init_user_db():
     """Initialize user database with enhanced error handling"""
     try:
+        # ✅ Log the database path for debugging
+        logging.info(f"🔍 Initializing database at: {DATABASE_PATH}")
+        
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
@@ -57,10 +68,16 @@ def init_user_db():
             ''')
             
             conn.commit()
-            logging.info("✅ Database initialized successfully")
+            
+            # ✅ Log database info for debugging
+            cursor.execute('SELECT COUNT(*) FROM users')
+            user_count = cursor.fetchone()[0]
+            logging.info(f"✅ Database initialized successfully at {DATABASE_PATH}")
+            logging.info(f"📊 Current user count: {user_count}")
             
     except Exception as e:
         logging.error(f"❌ Error initializing database: {e}")
+        logging.error(f"❌ Database path: {DATABASE_PATH}")
         raise
 
 def get_user_balance(user_id):
@@ -279,3 +296,16 @@ def get_user_balance_detailed(user_id):
     except Exception as e:
         logging.error(f"Database error in get_user_balance_detailed: {e}")
         return None
+
+# ✅ Add database backup functionality
+def backup_database():
+    """Create a backup of the database"""
+    try:
+        import shutil
+        backup_path = f"{DATABASE_PATH}.backup"
+        shutil.copy2(DATABASE_PATH, backup_path)
+        logging.info(f"✅ Database backed up to {backup_path}")
+        return True
+    except Exception as e:
+        logging.error(f"❌ Database backup failed: {e}")
+        return False
