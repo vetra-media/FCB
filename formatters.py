@@ -102,8 +102,8 @@ def format_fomo_message(coin, fomo_score, signal_type, volume_spike, trend_statu
     if is_broadcast:
         message_parts.extend([
             "",
-            "💬 <b>Want to analyze another coin?</b>",
-            "Just type any coin name directly in this chat!"
+            "🚀 <b>Ready for more FOMO analysis?</b>",
+            "Start chatting with @fomocryptobot for instant insights!"
         ])
     
     if not is_broadcast:
