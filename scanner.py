@@ -22,6 +22,10 @@ from analysis import calculate_fomo_status_ultra_fast, analyze_momentum_trend, a
 from formatters import format_fomo_message, build_broadcast_keyboard
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
+# Add these two lines after the imports
+coin_history = []  # Stack to track previously analyzed coins
+current_coin_index = -1  # Track current position in history
+
 # =============================================================================
 # USER NOTIFICATION SYSTEM
 # =============================================================================
@@ -384,13 +388,14 @@ async def broadcast_fomo_alert(bot, coin_data):
         )
         
         # NEW: Addictive REFRESH/NEXT buttons instead of just Buy Now
+        # REPLACE WITH:
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton('REFRESH', callback_data=f"refresh_{coin_data['coin']}"),
-                InlineKeyboardButton('NEXT', callback_data="next_coin")
+                InlineKeyboardButton('⬅️ BACK', callback_data=f"back_{coin_data['coin']}"),
+                InlineKeyboardButton('🎰 NEXT', callback_data="next_coin")
             ],
             [
-                InlineKeyboardButton('BUY THIS COIN', url=coin_info['source_url'])
+                InlineKeyboardButton('💰 BUY THIS COIN', url=coin_info['source_url'])
             ]
         ])
         

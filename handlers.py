@@ -33,7 +33,7 @@ from formatters import (
     get_start_message, get_help_message
 )
 from cache import get_ultra_fast_fomo_opportunities
-from scanner import add_user_to_notifications, subscribed_users
+from scanner import add_user_to_notifications, subscribed_users, coin_history, current_coin_index
 
 # =============================================================================
 # UTILITY FUNCTIONS
@@ -328,7 +328,7 @@ async def handle_instant_update(query, context, coin_id, user_id):
         await safe_edit_message(query, text=spend_message)
         return
     
-    # INSTANT visual feedback - ✅ FIXED
+    # INSTANT visual feedback
     instant_msg = random.choice(INSTANT_SPIN_RESPONSES)
     await safe_edit_message(query, text=f"🎰 <b>{instant_msg}</b>")
     
@@ -397,7 +397,7 @@ async def handle_instant_spin(query, context, user_id):
         await safe_edit_message(query, text=spend_message)
         return
     
-    # INSTANT visual feedback - ✅ FIXED
+    # INSTANT visual feedback
     instant_msg = random.choice(INSTANT_SPIN_RESPONSES)
     await safe_edit_message(query, text=f"🎰 <b>{instant_msg}</b>")
     
@@ -437,10 +437,6 @@ async def handle_instant_spin(query, context, user_id):
                 'source_url': coin_data.get('source_url', 'https://coingecko.com')
             }
             
-            # DEBUG: Check what data we have
-            logging.info(f"DEBUG - coin_data keys: {list(coin_data.keys())}")
-            logging.info(f"DEBUG - coin object: {coin}")
-            
             # Format treasure discovery message
             msg = format_treasure_discovery_message(
                 coin, 
@@ -476,7 +472,7 @@ async def handle_instant_spin(query, context, user_id):
                 except Exception as e:
                     logging.warning(f"Image fetch failed in NEXT: {e}")
 
-            # Fallback to text message - ✅ FIXED
+            # Fallback to text message
             await safe_edit_message(query, text=msg, reply_markup=keyboard)
             
             logging.info(f"User {user_id} spun for {coin_data['symbol']} - {spend_message}")
@@ -488,6 +484,101 @@ async def handle_instant_spin(query, context, user_id):
         logging.error(f"Error in instant spin: {e}")
         await safe_edit_message(query, text="❌ Error finding opportunities. Please try again.")
 
+async def handle_back_navigation(query, context, user_id):
+    """Handle the BACK button with FREE navigation - FIXED LOGO UPDATES"""
+    global coin_history, current_coin_index
+    
+    # Check if they have ANY scans available (just to prevent complete freeloaders)
+    fcb_balance, _, _, total_free_remaining, _ = get_user_balance(user_id)
+    has_any_scans = total_free_remaining > 0 or fcb_balance > 0
+    
+    if not has_any_scans:
+        # Only show upgrade if they have zero scans
+        message = format_out_of_scans_refresh_message()
+        keyboard = build_out_of_scans_refresh_keyboard()
+        await safe_edit_message(query, text=message, reply_markup=keyboard)
+        return
+    
+    # FREE navigation
+    await safe_edit_message(query, text="⬅️ <b>Going back... (FREE navigation)</b>")
+    
+    try:
+        if not coin_history:
+            await safe_edit_message(query, text="❌ No previous coins in this session.")
+            return
+        
+        # Move back in history
+        if current_coin_index > 0:
+            current_coin_index -= 1
+        # If already at first coin, stay there (ping same coin)
+        
+        previous_coin_id = coin_history[current_coin_index]
+        
+        # Get coin info for the previous coin
+        coin_id, coin = await get_coin_info_ultra_fast(previous_coin_id)
+        
+        if not coin:
+            await safe_edit_message(query, text="❌ Unable to fetch data for previous coin.")
+            return
+        
+        # Run analysis on previous coin
+        fomo_score, signal_type, trend_status, distribution_status, volume_spike = await calculate_fomo_status_ultra_fast(coin)
+        
+        # Format message
+        msg = format_fomo_message(coin, fomo_score, signal_type, volume_spike, trend_status, distribution_status, is_broadcast=False)
+        
+        # Add navigation info
+        position = current_coin_index + 1
+        total = len(coin_history)
+        msg += f"\n\n⬅️ <i>History: {position}/{total} | Free navigation</i>"
+        
+        # Get user balance for buttons
+        fcb_balance, free_queries_used, new_user_bonus_used, total_free_remaining, has_received_bonus = get_user_balance(user_id)
+        user_balance_info = {
+            'fcb_balance': fcb_balance,
+            'free_queries_used': free_queries_used,
+            'new_user_bonus_used': new_user_bonus_used,
+            'total_free_remaining': total_free_remaining,
+            'has_received_bonus': has_received_bonus
+        }
+        
+        keyboard = build_addictive_buttons(coin, user_balance_info)
+        
+        # 🔧 FIX: Handle logo updates properly
+        logo_url = coin.get('logo')
+        if logo_url:
+            try:
+                session = await get_optimized_session()
+                async with session.get(logo_url) as response:
+                    if response.status == 200:
+                        image_bytes = BytesIO(await response.read())
+                        
+                        # Delete old message and send new one with photo
+                        try:
+                            await query.message.delete()
+                            await context.bot.send_photo(
+                                chat_id=query.message.chat_id,
+                                photo=image_bytes,
+                                caption=msg,
+                                parse_mode='HTML',
+                                reply_markup=keyboard
+                            )
+                            logging.info(f"✅ BACK navigation with photo: {previous_coin_id} (position {position}/{total})")
+                            return
+                        except Exception as photo_error:
+                            logging.warning(f"Photo send failed in BACK: {photo_error}")
+            except Exception as e:
+                logging.warning(f"Image fetch failed in BACK: {e}")
+        
+        # Fallback to text message if photo fails
+        await safe_edit_message(query, text=msg, reply_markup=keyboard)
+        
+        logging.info(f"✅ BACK navigation complete: {previous_coin_id} (position {position}/{total})")
+        
+    except Exception as e:
+        logging.error(f"Error in back navigation: {e}")
+        await safe_edit_message(query, text="❌ Error navigating back. Please try again.")
+
 async def send_coin_message_ultra_fast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ULTRA-FAST coin message handler - NOW 5x FASTER!"""
     if not update.message or not update.message.text:
@@ -498,7 +589,7 @@ async def send_coin_message_ultra_fast(update: Update, context: ContextTypes.DEF
     
     logging.info(f"🔍 DEBUG: User {user_id} requested: '{query}'")
     
-    # ✅ SINGLE rate limit check with detailed logging
+    # Rate limit check
     allowed, time_remaining, reason = check_rate_limit_with_fcb(user_id)
     logging.info(f"🔍 DEBUG: Rate limit check - allowed: {allowed}, reason: '{reason}', time_remaining: {time_remaining}")
     
@@ -506,39 +597,27 @@ async def send_coin_message_ultra_fast(update: Update, context: ContextTypes.DEF
         if reason == "No queries available":
             logging.info(f"🔍 DEBUG: User {user_id} out of scans - attempting to send out of scans message")
             try:
-                # ✅ Test the formatters first
-                logging.info(f"🔍 DEBUG: Calling format_out_of_scans_message with query: '{query}'")
                 message = format_out_of_scans_message(query)
-                logging.info(f"🔍 DEBUG: Message formatted successfully: {len(message)} chars")
-                
-                logging.info(f"🔍 DEBUG: Calling build_out_of_scans_keyboard with query: '{query}'")
                 keyboard = build_out_of_scans_keyboard(query)
-                logging.info(f"🔍 DEBUG: Keyboard built successfully")
-                
-                logging.info(f"🔍 DEBUG: Attempting to send message to user {user_id}")
                 await update.message.reply_text(message, parse_mode='HTML', reply_markup=keyboard)
                 logging.info(f"✅ DEBUG: Out of scans message sent successfully to user {user_id}")
                 return
-                
             except Exception as e:
                 logging.error(f"❌ DEBUG: Failed to send out of scans message to user {user_id}: {e}")
-                logging.error(f"❌ DEBUG: Exception type: {type(e).__name__}")
-                logging.error(f"❌ DEBUG: Exception args: {e.args}")
-                
-                # ✅ Emergency fallback message
+                # Emergency fallback message
                 try:
                     fallback_message = f"""💔 <b>Out of FOMO Scans!</b>
 
 You've used all your free scans for today.
 
 🎯 <b>Get More Scans:</b>
-• Buy FCB tokens with /buy
-• Get unlimited scans instantly!
+- Buy FCB tokens with /buy
+- Get unlimited scans instantly!
 
 💡 <b>Why FCB tokens?</b>
-• No daily limits
-• Instant FOMO analysis
-• Premium features
+- No daily limits
+- Instant FOMO analysis
+- Premium features
 
 Type /buy to get started! 🚀"""
                     
@@ -575,6 +654,12 @@ Type /buy to get started! 🚀"""
         if not coin:
             await searching_msg.edit_text('❌ Coin not found! Please check spelling.')
             return
+
+        # ADD THE HISTORY TRACKING HERE (after successful coin lookup):
+        global coin_history, current_coin_index
+        if not coin_history or coin_history[-1] != coin_id:
+            coin_history.append(coin_id)
+        current_coin_index = len(coin_history) - 1
         
         # Show basic info immediately
         from formatters import short_stat, emoji_for_percent
@@ -649,6 +734,11 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
         await handle_star_purchase(update, context)
         return
     
+    # Handle Back button with instant response  
+    if query.data.startswith("back_"):
+        await handle_back_navigation(query, context, user_id)
+        return
+    
     elif query.data == "check_balance":
         user_id = query.from_user.id
         fcb_balance, free_queries_used, new_user_bonus_used, total_free_remaining, has_received_bonus = get_user_balance(user_id)
@@ -658,7 +748,6 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
 🎯 FOMO Scans: <b>{total_free_remaining} remaining</b>
 💎 FCB Tokens: <b>{fcb_balance}</b>"""
         
-        # ✅ FIXED
         await safe_edit_message(query, text=message)
         return
     
@@ -669,15 +758,13 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
         if reason == "No queries available":
             message = format_out_of_scans_refresh_message()
             keyboard = build_out_of_scans_refresh_keyboard()
-            # ✅ FIXED
             await safe_edit_message(query, text=message, reply_markup=keyboard)
         else:
             countdown_msg = create_countdown_visual(time_remaining)
-            # ✅ FIXED
             await safe_edit_message(query, text=countdown_msg)
         return
     
-    # Handle Refresh button with instant response
+    # Handle Refresh button with instant response (legacy support)
     if query.data.startswith("refresh_"):
         coin_id = query.data.replace("refresh_", "")
         await handle_instant_update(query, context, coin_id, user_id)
@@ -688,7 +775,6 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
     
     else:
         logging.warning(f"UNKNOWN CALLBACK: '{query.data}'")
-        # ✅ FIXED
         await safe_edit_message(query, text="❌ Unknown action. Please try again.")
 
 # =============================================================================
@@ -721,7 +807,6 @@ async def handle_star_purchase(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         except Exception as e:
             logging.error(f"Error sending invoice: {e}")
-            # ✅ FIXED
             await safe_edit_message(query, text="❌ Error creating invoice. Please try again.")
 
 async def pre_checkout_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -737,7 +822,7 @@ async def pre_checkout_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 async def payment_success_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle successful Stars payments - FIXED VERSION"""
     payment = update.message.successful_payment
-    actual_buyer_id = update.effective_user.id  # ✅ Get the actual buyer's ID
+    actual_buyer_id = update.effective_user.id  # Get the actual buyer's ID
     
     # Add debug logging
     logging.info(f"🔍 PAYMENT DEBUG: Buyer ID: {actual_buyer_id}")
@@ -751,7 +836,7 @@ async def payment_success_handler(update: Update, context: ContextTypes.DEFAULT_
         package_key = payload_parts[1]
         payload_user_id = int(payload_parts[2])
         
-        # ✅ Security check: ensure the buyer matches the payload
+        # Security check: ensure the buyer matches the payload
         if actual_buyer_id != payload_user_id:
             logging.error(f"❌ SECURITY ALERT: Buyer {actual_buyer_id} != Payload {payload_user_id}")
             await update.message.reply_text(
@@ -764,13 +849,12 @@ async def payment_success_handler(update: Update, context: ContextTypes.DEFAULT_
             tokens = FCB_STAR_PACKAGES[package_key]['tokens']
             stars = FCB_STAR_PACKAGES[package_key]['stars']
             
-            # ✅ Add tokens with verification
+            # Add tokens with verification
             success, new_balance = add_fcb_tokens(actual_buyer_id, tokens)
             
             if success:
-                # ✅ Record first purchase date using local import
+                # Record first purchase date
                 try:
-                    from database import get_db_connection
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
                         cursor.execute('''
@@ -782,7 +866,7 @@ async def payment_success_handler(update: Update, context: ContextTypes.DEFAULT_
                 except Exception as e:
                     logging.error(f"Error updating first purchase date: {e}")
                 
-                # ✅ Send success message with balance confirmation
+                # Send success message with balance confirmation
                 message = f"""🎉 <b>Purchase Successful!</b>
 
 💎 <b>{tokens} FCB tokens</b> added to your account!
@@ -798,7 +882,7 @@ async def payment_success_handler(update: Update, context: ContextTypes.DEFAULT_
                 
                 logging.info(f"✅ PAYMENT SUCCESS: User {actual_buyer_id} bought {tokens} FCB tokens for {stars} Stars - New balance: {new_balance}")
             else:
-                # ✅ Handle database failure
+                # Handle database failure
                 logging.error(f"❌ PAYMENT FAILED: Database error for user {actual_buyer_id}")
                 await update.message.reply_text(
                     "❌ Payment processed but token delivery failed. Please contact support with this transaction ID.",

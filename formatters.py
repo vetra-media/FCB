@@ -312,12 +312,12 @@ def build_addictive_buttons(coin, user_balance_info=None):
     
     coin_id = coin.get('id', 'unknown')
     safe_coin_id = coin_id[:50] if len(coin_id) > 50 else coin_id
-    refresh_callback = f"refresh_{safe_coin_id}"
+    back_callback = f"back_{safe_coin_id}"
     next_callback = "next_coin"
     
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(f'🔄 REFRESH{balance_text}', callback_data=refresh_callback),
+            InlineKeyboardButton(f'⬅️ BACK{balance_text}', callback_data=back_callback),
             InlineKeyboardButton(f'🎰 NEXT{balance_text}', callback_data=next_callback)
         ],
         [
@@ -340,11 +340,11 @@ def build_broadcast_keyboard(coin_data):
     """Build keyboard for broadcast messages"""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton('REFRESH', callback_data=f"refresh_{coin_data['coin']}"),
-            InlineKeyboardButton('NEXT', callback_data="next_coin")
+            InlineKeyboardButton('⬅️ BACK', callback_data=f"back_{coin_data['coin']}"),
+            InlineKeyboardButton('🎰 NEXT', callback_data="next_coin")
         ],
         [
-            InlineKeyboardButton('BUY COIN', url=coin_data.get('source_url', 'https://coingecko.com')),
+            InlineKeyboardButton('💰 BUY COIN', url=coin_data.get('source_url', 'https://coingecko.com')),
             InlineKeyboardButton('⭐ TOP UP', callback_data='buy_starter')
         ]
     ])
