@@ -554,142 +554,230 @@ async def handle_instant_spin(query, context, user_id):
         await safe_edit_message(query, text="❌ Error finding opportunities. Please try again.")
 
 async def handle_back_navigation(query, context, user_id):
-    """Handle the BACK button with FREE navigation - FIXED USER SESSIONS"""
+    """Handle the BACK button with FREE navigation - PROPERLY FIXED VERSION"""
     
     # 🔧 DEBUG: Log the back request
     logging.info(f"🔍 BACK DEBUG: User {user_id} clicked back")
-    debug_user_session(user_id, "back button clicked")
-    
-    # Check if they have ANY scans available (just to prevent complete freeloaders)
-    fcb_balance, _, _, total_free_remaining, _ = get_user_balance(user_id)
-    has_any_scans = total_free_remaining > 0 or fcb_balance > 0
-    
-    if not has_any_scans:
-        # Only show upgrade if they have zero scans
-        message = format_out_of_scans_back_message()
-        keyboard = build_out_of_scans_back_keyboard()
-        await safe_edit_message(query, text=message, reply_markup=keyboard)
-        return
-    
-    # FREE navigation
-    await safe_edit_message(query, text="⬅️ <b>Going back... (FREE navigation)</b>")
     
     try:
-        # Get user session
-        session = get_user_session(user_id)
+        # Check if they have ANY scans available (just to prevent complete freeloaders)
+        fcb_balance, _, _, total_free_remaining, _ = get_user_balance(user_id)
+        has_any_scans = total_free_remaining > 0 or fcb_balance > 0
         
-        if not session['history']:
-            logging.warning(f"🔍 BACK DEBUG: No coin history for user {user_id}")
-            await safe_edit_message(query, text="❌ No previous coins in this session.")
+        if not has_any_scans:
+            # Only show upgrade if they have zero scans
+            message = format_out_of_scans_back_message()
+            keyboard = build_out_of_scans_back_keyboard()
+            await safe_edit_message(query, text=message, reply_markup=keyboard)
             return
         
-        # 🔧 FIXED: Validate current index
-        if session['index'] < 0 or session['index'] >= len(session['history']):
-            logging.error(f"🔍 BACK DEBUG: Invalid index {session['index']} for history length {len(session['history'])}")
-            # Reset to last valid position
-            session['index'] = len(session['history']) - 1
-            logging.info(f"🔍 BACK DEBUG: Reset index to {session['index']}")
+        # FREE navigation feedback
+        await safe_edit_message(query, text="⬅️ <b>Going back... (FREE navigation)</b>")
         
-        # 🔧 PROPER BACK NAVIGATION LOGIC
-        if session['index'] > 0:
-            # Move back to previous coin
-            session['index'] -= 1
-            previous_coin_id = session['history'][session['index']]
-            logging.info(f"⬅️ User {user_id}: Moving back to position {session['index'] + 1}/{len(session['history'])}: {previous_coin_id}")
+        # Get user session with better error handling
+        session = get_user_session(user_id)
+        debug_user_session(user_id, "back button clicked")
+        
+        if not session.get('history') or len(session['history']) == 0:
+            logging.warning(f"🔍 BACK DEBUG: No coin history for user {user_id}")
+            await safe_edit_message(query, text="❌ No previous coins in this session. Try searching for a coin first!")
+            return
+        
+        # 🔧 FIXED: Robust index validation and correction
+        current_index = session.get('index', 0)
+        history_length = len(session['history'])
+        
+        # Ensure index is within bounds
+        if current_index >= history_length:
+            current_index = history_length - 1
+            session['index'] = current_index
+            logging.info(f"🔍 BACK DEBUG: Corrected out-of-bounds index to {current_index}")
+        
+        if current_index < 0:
+            current_index = 0
+            session['index'] = current_index
+            logging.info(f"🔍 BACK DEBUG: Corrected negative index to {current_index}")
+        
+        # 🔧 CRITICAL FIX: PROPER BACK NAVIGATION LOGIC
+        if current_index > 0:
+            # Move back to previous coin (decrease index by 1)
+            new_index = current_index - 1
+            session['index'] = new_index
+            target_coin_id = session['history'][new_index]
+            logging.info(f"⬅️ User {user_id}: Moving back from position {current_index + 1} to {new_index + 1}/{history_length}: {target_coin_id}")
         else:
-            # Already at first coin, stay there
-            previous_coin_id = session['history'][0]
-            logging.info(f"⬅️ User {user_id}: Already at first coin: {previous_coin_id}")
+            # Already at first coin, can't go back further
+            target_coin_id = session['history'][0]
+            logging.info(f"⬅️ User {user_id}: Already at first coin (position 1/{history_length}), refreshing: {target_coin_id}")
+            await safe_edit_message(query, text="⬅️ You're already at the first coin in this session!")
+            return
         
         # 🔧 VALIDATE: Check the coin ID before fetching
-        if not previous_coin_id or previous_coin_id == 'unknown' or previous_coin_id == '':
-            logging.error(f"🔍 BACK DEBUG: Invalid coin ID '{previous_coin_id}' at position {session['index']}")
+        if not target_coin_id or target_coin_id == 'unknown' or target_coin_id == '' or target_coin_id is None:
+            logging.error(f"🔍 BACK DEBUG: Invalid coin ID '{target_coin_id}' at position {session['index']}")
             await safe_edit_message(query, text="❌ Invalid coin in history. Please start a new search.")
             return
         
-        logging.info(f"🔍 BACK DEBUG: Attempting to fetch data for coin: {previous_coin_id}")
+        logging.info(f"🔍 BACK DEBUG: Attempting to fetch data for coin: {target_coin_id}")
         
-        # 🔧 FETCH: Get coin info with better error handling
-        try:
-            coin_id, coin = await get_coin_info_ultra_fast(previous_coin_id)
-            logging.info(f"🔍 BACK DEBUG: Fetch result - coin_id: {coin_id}, coin data exists: {bool(coin)}")
-        except Exception as fetch_error:
-            logging.error(f"🔍 BACK DEBUG: Fetch error for {previous_coin_id}: {fetch_error}")
-            await safe_edit_message(query, text=f"❌ Error fetching data for {previous_coin_id}. It may have been delisted.")
-            return
+# 🔧 ROBUST FETCH: Get coin info with intelligent fallback handling
+        coin_id = None
+        coin = None
+        original_target = target_coin_id
         
-        if not coin:
-            logging.error(f"🔍 BACK DEBUG: No coin data returned for {previous_coin_id}")
+        # Try multiple fetch strategies for better success rate
+        fetch_attempts = [
+            target_coin_id,  # Original ID
+            target_coin_id.lower(),  # Lowercase version
+            target_coin_id.replace('-', ''),  # Remove dashes
+            target_coin_id.split('-')[0] if '-' in target_coin_id else target_coin_id  # First part before dash
+        ]
+        
+        for attempt_id in fetch_attempts:
+            try:
+                logging.info(f"🔍 BACK DEBUG: Trying to fetch with ID: '{attempt_id}'")
+                coin_id, coin = await get_coin_info_ultra_fast(attempt_id)
+                
+                if coin and coin is not None:
+                    logging.info(f"✅ BACK DEBUG: Success with ID '{attempt_id}' for original '{original_target}'")
+                    # Update the target_coin_id to the working one for consistency
+                    target_coin_id = attempt_id
+                    break
+                else:
+                    logging.warning(f"🔍 BACK DEBUG: No data for ID '{attempt_id}'")
+                    
+            except Exception as fetch_error:
+                logging.warning(f"🔍 BACK DEBUG: Fetch error for '{attempt_id}': {fetch_error}")
+                continue
+        
+        # If all fetch attempts failed, try to skip to previous coins
+        if not coin or coin is None:
+            logging.error(f"🔍 BACK DEBUG: All fetch attempts failed for {original_target}")
             
             # Try to skip to the previous coin in history if current one is delisted
-            attempts = 0
-            max_attempts = 3  # Prevent infinite loops
+            skip_attempts = 0
+            max_skip_attempts = 5  # Try up to 5 previous coins
             
-            while not coin and attempts < max_attempts and session['index'] > 0:
-                attempts += 1
-                logging.info(f"🔍 BACK DEBUG: Attempt {attempts} - Trying to skip delisted coin {previous_coin_id}")
+            while (not coin or coin is None) and skip_attempts < max_skip_attempts and session['index'] > 0:
+                skip_attempts += 1
+                logging.info(f"🔍 BACK DEBUG: Skip attempt {skip_attempts} - Moving to previous coin")
                 
                 # Move back one more position
                 session['index'] -= 1
-                previous_coin_id = session['history'][session['index']]
+                if session['index'] < 0:
+                    session['index'] = 0
+                    break
+                    
+                next_target = session['history'][session['index']]
+                logging.info(f"🔍 BACK DEBUG: Trying to skip to: {next_target}")
                 
-                # Try fetching this previous coin
-                try:
-                    coin_id, coin = await get_coin_info_ultra_fast(previous_coin_id)
-                    if coin:
-                        logging.info(f"✅ BACK DEBUG: Found valid coin after skipping: {previous_coin_id}")
-                        break
-                    else:
-                        logging.warning(f"🔍 BACK DEBUG: Coin {previous_coin_id} also delisted, trying next...")
-                except Exception as fetch_error:
-                    logging.error(f"🔍 BACK DEBUG: Error fetching {previous_coin_id}: {fetch_error}")
+                # Try fetching this previous coin with the same multi-strategy approach
+                for attempt_id in [next_target, next_target.lower(), next_target.replace('-', ''), 
+                                 next_target.split('-')[0] if '-' in next_target else next_target]:
+                    try:
+                        coin_id, coin = await get_coin_info_ultra_fast(attempt_id)
+                        if coin and coin is not None:
+                            logging.info(f"✅ BACK DEBUG: Found valid coin after skipping: {attempt_id}")
+                            target_coin_id = attempt_id
+                            break
+                    except Exception as fetch_error:
+                        logging.warning(f"🔍 BACK DEBUG: Skip fetch error for {attempt_id}: {fetch_error}")
+                        continue
+                
+                # If we found a valid coin, break out of the skip loop
+                if coin and coin is not None:
+                    break
             
-            # If we still don't have a valid coin after attempts
-            if not coin:
-                if session['index'] <= 0:
-                    await safe_edit_message(query, text="❌ All previous coins in history appear to be delisted. Please start a new search.")
+            # If we still don't have a valid coin after all attempts
+            if not coin or coin is None:
+                logging.error(f"🔍 BACK DEBUG: No valid coins found after {skip_attempts} skip attempts")
+                
+                # Check if we have any history left at all
+                if session['index'] <= 0 and len(session['history']) > 0:
+                    error_msg = "❌ Reached the beginning of your session history, but previous coins are no longer available. Please start a new search."
                 else:
-                    await safe_edit_message(query, text="❌ Unable to find any valid previous coins. Please start a new search.")
+                    error_msg = "❌ Unable to load any previous coins from your history. They may have been delisted or are temporarily unavailable. Please start a new search."
+                    
+                await safe_edit_message(query, text=error_msg)
                 return
         
-        logging.info(f"🔍 BACK DEBUG: Successfully fetched coin data for {coin_id}")
+        logging.info(f"🔍 BACK DEBUG: Successfully fetched coin data for {coin_id or target_coin_id}")
         
         # 🔧 ANALYSIS: Run analysis with error handling
+        fomo_score = 50  # Default values
+        signal_type = "Analysis Failed"
+        volume_spike = 1.0
+        trend_status = "Unknown"
+        distribution_status = "Unknown"
+        
         try:
             fomo_score, signal_type, trend_status, distribution_status, volume_spike = await calculate_fomo_status_ultra_fast(coin)
             logging.info(f"🔍 BACK DEBUG: Analysis complete - FOMO score: {fomo_score}")
         except Exception as analysis_error:
             logging.error(f"🔍 BACK DEBUG: Analysis error: {analysis_error}")
             # Continue with basic data if analysis fails
-            fomo_score, signal_type, volume_spike = 50, "Analysis Failed", 1.0
-            trend_status, distribution_status = "Unknown", "Unknown"
+            signal_type = "Analysis Unavailable"
+            trend_status = "Unknown"
+            distribution_status = "Unknown"
         
-        # Format message
-        msg = format_fomo_message(coin, fomo_score, signal_type, volume_spike, trend_status, distribution_status, is_broadcast=False)
-        
-        # Add navigation info
-        position = session['index'] + 1
-        total = len(session['history'])
-        msg += f"\n\n⬅️ <i>History: {position}/{total} | Free navigation</i>"
+        # Format message with error handling
+        try:
+            msg = format_fomo_message(coin, fomo_score, signal_type, volume_spike, trend_status, distribution_status, is_broadcast=False)
+            
+            # Add navigation info - FIXED CALCULATION
+            position = session['index'] + 1  # Convert 0-based index to 1-based position
+            total = len(session['history'])
+            can_go_back = session['index'] > 0
+            can_go_forward = session['index'] < total - 1
+            
+            # Add helpful navigation status
+            nav_status = "⬅️ <i>Free navigation"
+            if can_go_back and can_go_forward:
+                nav_status += f" | Position {position}/{total} | Can go back/forward"
+            elif can_go_back:
+                nav_status += f" | Position {position}/{total} | Can go back"
+            elif can_go_forward:
+                nav_status += f" | Position {position}/{total} | Can go forward"
+            else:
+                nav_status += f" | Position {position}/{total} | Only coin"
+            nav_status += "</i>"
+            
+            msg += f"\n\n{nav_status}"
+            
+        except Exception as format_error:
+            logging.error(f"🔍 BACK DEBUG: Message formatting error: {format_error}")
+            # Fallback simple message
+            coin_name = coin.get('name', 'Unknown') if coin else target_coin_id
+            msg = f"<b>{coin_name}</b>\n\n❌ Error formatting full analysis. Please try again or start a new search."
         
         # Get user balance for buttons
-        fcb_balance, free_queries_used, new_user_bonus_used, total_free_remaining, has_received_bonus = get_user_balance(user_id)
-        user_balance_info = {
-            'fcb_balance': fcb_balance,
-            'free_queries_used': free_queries_used,
-            'new_user_bonus_used': new_user_bonus_used,
-            'total_free_remaining': total_free_remaining,
-            'has_received_bonus': has_received_bonus
-        }
-        
-        keyboard = build_addictive_buttons(coin, user_balance_info)
+        try:
+            fcb_balance, free_queries_used, new_user_bonus_used, total_free_remaining, has_received_bonus = get_user_balance(user_id)
+            user_balance_info = {
+                'fcb_balance': fcb_balance,
+                'free_queries_used': free_queries_used,
+                'new_user_bonus_used': new_user_bonus_used,
+                'total_free_remaining': total_free_remaining,
+                'has_received_bonus': has_received_bonus
+            }
+            
+            keyboard = build_addictive_buttons(coin, user_balance_info)
+        except Exception as balance_error:
+            logging.error(f"🔍 BACK DEBUG: Balance/keyboard error: {balance_error}")
+            # Fallback keyboard
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton('🎰 NEXT', callback_data="next_coin")],
+                [InlineKeyboardButton('⭐ TOP UP', callback_data='buy_starter')]
+            ])
         
         # 🔧 DISPLAY: Handle logo updates properly
-        logo_url = coin.get('logo')
+        photo_sent = False
+        logo_url = coin.get('logo') if coin else None
+        
         if logo_url:
             try:
-                api_session = await get_optimized_session()  # RENAMED to avoid conflict
-                async with api_session.get(logo_url) as response:
+                api_session = await get_optimized_session()
+                async with api_session.get(logo_url, timeout=10) as response:
                     if response.status == 200:
                         image_bytes = BytesIO(await response.read())
                         
@@ -703,22 +791,34 @@ async def handle_back_navigation(query, context, user_id):
                                 parse_mode='HTML',
                                 reply_markup=keyboard
                             )
-                            logging.info(f"✅ BACK navigation with photo: {previous_coin_id} (position {position}/{total})")
-                            return
+                            photo_sent = True
+                            logging.info(f"✅ BACK navigation with photo: {target_coin_id}")
                         except Exception as photo_error:
                             logging.warning(f"Photo send failed in BACK: {photo_error}")
             except Exception as e:
                 logging.warning(f"Image fetch failed in BACK: {e}")
 
         # Fallback to text message if photo fails
-        await safe_edit_message(query, text=msg, reply_markup=keyboard)
+        if not photo_sent:
+            await safe_edit_message(query, text=msg, reply_markup=keyboard)
         
-        logging.info(f"✅ BACK navigation complete: {previous_coin_id} (position {position}/{total})")
+        # Final logging with corrected position calculation
+        final_position = session.get('index', 0) + 1
+        total = len(session.get('history', []))
+        logging.info(f"✅ BACK navigation complete: {target_coin_id} (position {final_position}/{total})")
         debug_user_session(user_id, "after back navigation")
         
     except Exception as e:
-        logging.error(f"❌ Error in back navigation: {e}", exc_info=True)
-        await safe_edit_message(query, text="❌ Error navigating back. Please try again or start a new search.")
+        logging.error(f"❌ CRITICAL ERROR in back navigation: {e}", exc_info=True)
+        try:
+            await safe_edit_message(query, text="❌ Error navigating back. Please try again or start a new search by typing a coin name.")
+        except Exception as fallback_error:
+            logging.error(f"❌ Even fallback message failed: {fallback_error}")
+            # Last resort - just answer the callback
+            try:
+                await query.answer("Error occurred, please try again")
+            except Exception:
+                pass
 
 async def send_coin_message_ultra_fast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ULTRA-FAST coin message handler - FIXED HISTORY TRACKING"""
