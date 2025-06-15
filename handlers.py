@@ -429,7 +429,7 @@ async def terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =============================================================================
 
 async def handle_instant_spin(query, context, user_id):
-    """Handle the 'NEXT' button with instant treasure discovery - FIXED HISTORY TRACKING"""
+    """Handle the 'NEXT' button with instant treasure discovery - FIXED COINGECKO ID VALIDATION"""
     
     # Spend the query first
     success, spend_message = spend_fcb_token(user_id)
@@ -478,16 +478,54 @@ async def handle_instant_spin(query, context, user_id):
                 'source_url': coin_data.get('source_url', 'https://coingecko.com')
             }
             
-            # 🔧 FIXED: UPDATE USER-SPECIFIC HISTORY WHEN SPINNING TO NEW COIN
-            new_coin_id = coin_data.get('coin') or coin_data.get('id') or coin_data.get('symbol', 'unknown')
-            logging.info(f"🔍 NEXT DEBUG: Got coin_id='{new_coin_id}' from cache data: {coin_data}")
+            # 🔧 CRITICAL FIX: VALIDATE COINGECKO ID BEFORE STORING IN HISTORY
+            raw_coin_id = coin_data.get('coin') or coin_data.get('id') or coin_data.get('symbol', 'unknown')
+            logging.info(f"🔍 NEXT DEBUG: Got raw coin_id='{raw_coin_id}' from cache data")
 
-            # Validate the coin ID before adding to history
+            # Try to validate this ID works with CoinGecko
+            proper_coin_id = None
+            
+            try:
+                # Test if this ID works with CoinGecko API
+                test_id, test_coin = await get_coin_info_ultra_fast(raw_coin_id)
+                if test_id and test_coin:
+                    proper_coin_id = test_id
+                    logging.info(f"✅ NEXT DEBUG: Validated CoinGecko ID '{proper_coin_id}'")
+                else:
+                    # Try with symbol if original ID fails
+                    symbol = coin_data.get('symbol', '').lower()
+                    if symbol and symbol != raw_coin_id:
+                        logging.info(f"🔍 NEXT DEBUG: Original ID failed, trying symbol '{symbol}'")
+                        test_id, test_coin = await get_coin_info_ultra_fast(symbol)
+                        if test_id and test_coin:
+                            proper_coin_id = test_id
+                            logging.info(f"✅ NEXT DEBUG: Symbol lookup successful, using '{proper_coin_id}'")
+                        else:
+                            # Try name as last resort
+                            name = coin_data.get('name', '').lower().replace(' ', '-')
+                            if name and name != raw_coin_id and name != symbol:
+                                logging.info(f"🔍 NEXT DEBUG: Symbol failed, trying name '{name}'")
+                                test_id, test_coin = await get_coin_info_ultra_fast(name)
+                                if test_id and test_coin:
+                                    proper_coin_id = test_id
+                                    logging.info(f"✅ NEXT DEBUG: Name lookup successful, using '{proper_coin_id}'")
+            except Exception as validation_error:
+                logging.warning(f"🔍 NEXT DEBUG: Validation error for '{raw_coin_id}': {validation_error}")
+            
+            # Use proper ID or fallback to original
+            if proper_coin_id:
+                new_coin_id = proper_coin_id
+                logging.info(f"✅ NEXT DEBUG: Using validated CoinGecko ID '{new_coin_id}' instead of '{raw_coin_id}'")
+            else:
+                new_coin_id = raw_coin_id
+                logging.warning(f"⚠️ NEXT DEBUG: Could not validate '{raw_coin_id}', storing anyway (may cause BACK issues)")
+            
+            # Validate the final coin ID before adding to history
             if not new_coin_id or new_coin_id == 'unknown' or new_coin_id == '':
-                logging.error(f"🔍 NEXT DEBUG: Invalid coin ID from cache: {coin_data}")
+                logging.error(f"🔍 NEXT DEBUG: Invalid final coin ID, using fallback")
                 new_coin_id = coin_data.get('symbol', f"cache_{current_index}")
 
-            # Add to user's history
+            # Add to user's history with the validated ID
             session = add_to_user_history(user_id, new_coin_id)
             
             # Also update the coin object to ensure consistency
@@ -521,8 +559,8 @@ async def handle_instant_spin(query, context, user_id):
             logo_url = coin.get('logo')
             if logo_url:
                 try:
-                    api_session = await get_optimized_session()    # ← CHANGED
-                    async with api_session.get(logo_url) as response:    # ← CHANGED
+                    api_session = await get_optimized_session()
+                    async with api_session.get(logo_url) as response:
                         if response.status == 200:
                             image_bytes = BytesIO(await response.read())
                             try:
