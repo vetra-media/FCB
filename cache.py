@@ -10,7 +10,7 @@ from datetime import datetime
 
 from config import (
     STABLECOIN_SYMBOLS, TOP_N_TO_EXCLUDE, MAX_COINS_PER_PAGE,
-    CACHE_REFRESH_INTERVAL, FOMO_CACHE
+    CACHE_BACK_INTERVAL, FOMO_CACHE
 )
 from api_client import fetch_market_data_ultra_fast, batch_processor
 from analysis import calculate_fomo_status_ultra_fast
@@ -146,7 +146,7 @@ async def init_ultra_fast_cache():
                 
                 logging.info(f"✅ Cache updated with {len(opportunities)} opportunities")
             
-            await asyncio.sleep(CACHE_REFRESH_INTERVAL)
+            await asyncio.sleep(CACHE_BACK_INTERVAL)
             
         except Exception as e:
             logging.error(f"Error updating cache: {e}")
@@ -186,7 +186,7 @@ def is_cache_fresh():
         return False
     
     time_since_update = (datetime.now() - FOMO_CACHE['last_update']).total_seconds()
-    return time_since_update < CACHE_REFRESH_INTERVAL * 2  # Allow 2x the refresh interval
+    return time_since_update < CACHE_BACK_INTERVAL * 2 # Allow 2x the refresh interval
 
 def get_cache_stats():
     """Get cache statistics for debugging"""

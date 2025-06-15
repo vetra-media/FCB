@@ -22,10 +22,6 @@ from analysis import calculate_fomo_status_ultra_fast, analyze_momentum_trend, a
 from formatters import format_fomo_message, build_broadcast_keyboard
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
-# Add these two lines after the imports
-coin_history = []  # Stack to track previously analyzed coins
-current_coin_index = -1  # Track current position in history
-
 # =============================================================================
 # USER NOTIFICATION SYSTEM
 # =============================================================================
@@ -97,8 +93,8 @@ async def send_notification_to_users(bot, coin_data):
     from formatters import build_addictive_buttons
     keyboard = build_addictive_buttons(coin_info)
     
-    # Send to all subscribed users
-    for user_id in subscribed_users:
+# Send to all subscribed users
+    for user_id in subscribed_users.copy():  # Use copy() to avoid modification during iteration
         try:
             # Send short notification that brings them back to bot
             await bot.send_message(
@@ -108,7 +104,22 @@ async def send_notification_to_users(bot, coin_data):
             )
             logging.info(f"Notification sent to user {user_id}")
         except Exception as e:
-            logging.error(f"Failed to send notification to user {user_id}: {e}")
+            error_msg = str(e).lower()
+            if "forbidden" in error_msg:
+                # User blocked the bot
+                logging.warning(f"🚫 User {user_id} blocked bot - removing from notifications")
+                subscribed_users.discard(user_id)
+                save_subscriptions()
+            elif "chat not found" in error_msg:
+                # Chat doesn't exist anymore
+                logging.warning(f"❌ Chat not found for user {user_id} - removing from notifications")
+                subscribed_users.discard(user_id)
+                save_subscriptions()
+            elif "timed out" in error_msg:
+                # Just log timeout, don't remove user
+                logging.warning(f"⏰ Timeout sending to user {user_id} - will retry later")
+            else:
+                logging.error(f"❌ Unexpected error sending to user {user_id}: {e}")
 
 # =============================================================================
 # FOMO ANALYSIS FUNCTIONS
@@ -387,7 +398,7 @@ async def broadcast_fomo_alert(bot, coin_data):
             is_broadcast=True
         )
         
-        # NEW: Addictive REFRESH/NEXT buttons instead of just Buy Now
+        # NEW: Addictive BACK/NEXT buttons instead of just Buy Now
         # REPLACE WITH:
         keyboard = InlineKeyboardMarkup([
             [

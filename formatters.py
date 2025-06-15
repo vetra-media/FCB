@@ -230,7 +230,7 @@ Settings → Stars → Buy More Stars
 
 <b>🚀 Why upgrade?</b>
 - Never run out of scans again
-- 🔄 REFRESH any coin anytime
+- ⬅️ BACK any coin anytime
 - 🎰 NEXT button always works
 - Same algorithm as our 70%+ alerts
 
@@ -250,7 +250,7 @@ What if {query} is about to 🚀 and you're missing it?
 💎 <b>Premium users would see:</b>
 - Real-time FOMO score for {query}
 - Volume spike analysis  
-- 🔄 Refresh & 🎰 Spin buttons
+- ⬅️ Back & 🎰 Spin buttons
 - Unlimited market scanning
 
 🚨 <b>Don't miss the next moon shot!</b>
@@ -260,8 +260,8 @@ Tap below to pay instantly and never run out again."""
     
     return message
 
-def format_out_of_scans_refresh_message():
-    """Format message for when user is out of scans during refresh"""
+def format_out_of_scans_back_message():
+    """Format message for when user is out of scans during back"""
     message = """💔 <b>Out of FOMO Scans!</b>
 
 You wanted fresh data but you're out of scans.
@@ -355,8 +355,8 @@ def build_out_of_scans_keyboard(query):
         InlineKeyboardButton(f"🚀 Analyze {query.upper()} Now!", callback_data="buy_starter")
     ]])
 
-def build_out_of_scans_refresh_keyboard():
-    """Build keyboard for out of scans refresh message"""
+def build_out_of_scans_back_keyboard():
+    """Build keyboard for out of scans back message"""
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("🚀 Go Premium Now!", callback_data="buy_premium")
     ]])
@@ -415,7 +415,7 @@ def get_help_message():
 <b>💎 FCB Token Benefits:</b>
 • Free: 8 FOMO scans to start (3 bonus + 5 daily)
 • Premium: Unlimited scans with FCB tokens
-• Instant 🔄 Refresh and 🎰 Spin buttons
+• Instant ⬅️ Back and 🎰 Spin buttons
 
 <b>⚡ Performance Improvements:</b>
 • 500 API calls/minute (10x more capacity)

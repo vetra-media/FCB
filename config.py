@@ -126,7 +126,7 @@ FOMO_CACHE = {
     'current_index': 0
 }
 
-CACHE_REFRESH_INTERVAL = 180  # Reduced to 3 minutes for fresher data
+CACHE_BACK_INTERVAL = 180  # Reduced to 3 minutes for fresher data
 
 # =============================================================================
 # RESPONSE MESSAGES
@@ -172,7 +172,6 @@ def validate_config():
 
     errors = []
     warnings = []
-    ...
 
     # Critical checks
     if not BOT_TOKEN:

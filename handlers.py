@@ -6,6 +6,8 @@ Handles all Telegram bot interactions, commands, and callbacks
 import logging
 import random
 import asyncio
+import time 
+from datetime import datetime 
 from io import BytesIO
 
 from telegram import Update, LabeledPrice, InlineKeyboardMarkup, InlineKeyboardButton
@@ -27,13 +29,77 @@ from analysis import calculate_fomo_status_ultra_fast
 from formatters import (
     format_fomo_message, format_treasure_discovery_message, format_balance_message,
     format_purchase_options_message, format_out_of_scans_message, 
-    format_out_of_scans_refresh_message, format_payment_success_message,
+    format_out_of_scans_back_message, format_payment_success_message,
     build_addictive_buttons, build_purchase_keyboard, build_out_of_scans_keyboard,
-    build_out_of_scans_refresh_keyboard, create_countdown_visual,
+    build_out_of_scans_back_keyboard, create_countdown_visual,
     get_start_message, get_help_message
 )
 from cache import get_ultra_fast_fomo_opportunities
-from scanner import add_user_to_notifications, subscribed_users, coin_history, current_coin_index
+from scanner import add_user_to_notifications, subscribed_users, save_subscriptions
+
+user_sessions = {}  # {user_id: {'history': [], 'index': 0, 'last_activity': timestamp}}
+
+def get_user_session(user_id):
+    """Get or create user-specific session"""
+    current_time = time.time()
+    
+    # Clean old sessions (older than 24 hours)
+    cleanup_old_sessions(current_time)
+    
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {
+            'history': [],
+            'index': 0,
+            'last_activity': current_time
+        }
+        logging.info(f"Created new session for user {user_id}")
+    else:
+        # Update activity timestamp
+        user_sessions[user_id]['last_activity'] = current_time
+    
+    return user_sessions[user_id]
+
+def cleanup_old_sessions(current_time):
+    """Remove sessions older than 24 hours to prevent memory leaks"""
+    cutoff_time = current_time - (24 * 3600)  # 24 hours ago
+    
+    old_users = [
+        user_id for user_id, session in user_sessions.items()
+        if session['last_activity'] < cutoff_time
+    ]
+    
+    for user_id in old_users:
+        del user_sessions[user_id]
+        logging.info(f"Cleaned up old session for user {user_id}")
+
+def add_to_user_history(user_id, coin_id):
+    """Add coin to user's navigation history"""
+    session = get_user_session(user_id)
+    
+    # Only add if it's different from the last coin (avoid duplicates)
+    if not session['history'] or session['history'][-1] != coin_id:
+        session['history'].append(coin_id)
+        # Set index to newest coin
+        session['index'] = len(session['history']) - 1
+        logging.info(f"User {user_id}: Added {coin_id} to history at position {session['index']}")
+    
+    return session
+
+def debug_user_session(user_id, context=""):
+    """Debug function to log user session state"""
+    if user_id in user_sessions:
+        session = user_sessions[user_id]
+        logging.info(f"🔍 SESSION DEBUG for User {user_id} ({context}):")
+        logging.info(f"  History: {session['history']}")
+        logging.info(f"  Index: {session['index']}")
+        logging.info(f"  History length: {len(session['history'])}")
+        
+        if session['history'] and 0 <= session['index'] < len(session['history']):
+            logging.info(f"  Current coin: {session['history'][session['index']]}")
+        else:
+            logging.info(f"  ❌ Index out of bounds!")
+    else:
+        logging.info(f"🔍 SESSION DEBUG: User {user_id} has no session")
 
 # =============================================================================
 # UTILITY FUNCTIONS
@@ -138,7 +204,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ✅ **You're now subscribed to FOMO alerts!**
 
 You'll receive high-quality FOMO alerts directly here with full interactivity:
-- 🔄 REFRESH button works
+- ⬅️ BACK button works
 - 🎰 NEXT button works  
 - 💰 BUY button works
 
@@ -275,6 +341,34 @@ async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='HTML'
         )
 
+async def debug_session_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Debug command to check user session state"""
+    user_id = update.effective_user.id
+    
+    if user_id in user_sessions:
+        session = user_sessions[user_id]
+        message = f"""🔍 <b>Session Debug for User {user_id}</b>
+
+📊 <b>Current State:</b>
+History Length: {len(session['history'])}
+Current Index: {session['index']}
+History: {session['history']}
+
+🎯 <b>Current Coin:</b> {session['history'][session['index']] if session['history'] and 0 <= session['index'] < len(session['history']) else 'Invalid'}
+
+🕒 <b>Session Info:</b>
+Last Activity: {datetime.fromtimestamp(session['last_activity']).strftime('%Y-%m-%d %H:%M:%S')}
+
+📈 <b>Navigation:</b>
+Can go back: {session['index'] > 0}
+Can go forward: {session['index'] < len(session['history']) - 1}
+
+<i>Check logs for detailed debug info</i>"""
+    else:
+        message = f"🔍 <b>Session Debug</b>\n\nUser {user_id} has no active session."
+    
+    await update.message.reply_text(message, parse_mode='HTML')
+
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show bot status and subscriber count"""
     user_id = update.effective_user.id
@@ -319,77 +413,8 @@ async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 # ULTRA-FAST MESSAGE HANDLERS
 # =============================================================================
 
-async def handle_instant_update(query, context, coin_id, user_id):
-    """Super fast update with progressive loading - NOW 5x FASTER!"""
-    
-    # Spend the query first
-    success, spend_message = spend_fcb_token(user_id)
-    if not success:
-        await safe_edit_message(query, text=spend_message)
-        return
-    
-    # INSTANT visual feedback
-    instant_msg = random.choice(INSTANT_SPIN_RESPONSES)
-    await safe_edit_message(query, text=f"🎰 <b>{instant_msg}</b>")
-    
-    try:
-        # Get coin info with ultra-fast lookup
-        coin_id, coin = await get_coin_info_ultra_fast(coin_id)
-        
-        if not coin:
-            await safe_edit_message(query, text="❌ Unable to fetch updated data. Coin may have been delisted.")
-            return
-        
-        # Show basic info immediately
-        from formatters import short_stat, emoji_for_percent, get_simple_timestamp
-        
-        name = f"{coin.get('name', 'Unknown')} ({coin.get('symbol', '')})"
-        price = short_stat(coin.get("price"))
-        p1 = coin.get("change_1h", 0) or 0
-        p24 = coin.get("change_24h", 0) or 0
-        v24 = int(coin.get("volume", 0) or 0)
-        
-        quick_msg = f"""🔄 <b>Refreshing Analysis</b>
-
-<b>{name}</b>
-💰 <b>Price:</b> {price}
-📊 1hr: {emoji_for_percent(p1)} <b>{p1:+.1f}%</b> | 24hr: {emoji_for_percent(p24)} <b>{p24:+.1f}%</b>
-📈 <b>Volume:</b> ${v24:,}
-
-⚡ <i>Running ULTRA-FAST analysis...</i>"""
-        
-        await safe_edit_message(query, text=quick_msg)
-        
-        # Run ULTRA-FAST parallel analysis
-        fomo_score, signal_type, trend_status, distribution_status, volume_spike = await calculate_fomo_status_ultra_fast(coin)
-        
-        # Complete message
-        msg = format_fomo_message(coin, fomo_score, signal_type, volume_spike, trend_status, distribution_status, is_broadcast=False)
-        msg += f"\n\n🔄 <i>Updated: {get_simple_timestamp()}</i>"
-        msg += f"\n💰 <i>{spend_message}</i>"
-        
-        # Get user balance for buttons
-        fcb_balance, free_queries_used, new_user_bonus_used, total_free_remaining, has_received_bonus = get_user_balance(user_id)
-        user_balance_info = {
-            'fcb_balance': fcb_balance,
-            'free_queries_used': free_queries_used,
-            'new_user_bonus_used': new_user_bonus_used,
-            'total_free_remaining': total_free_remaining,
-            'has_received_bonus': has_received_bonus
-        }
-        
-        keyboard = build_addictive_buttons(coin, user_balance_info)
-        
-        await safe_edit_message(query, text=msg, reply_markup=keyboard)
-        
-        logging.info(f"✅ ULTRA-FAST refresh complete for {coin_id}")
-        
-    except Exception as e:
-        logging.error(f"Error updating coin {coin_id}: {e}")
-        await safe_edit_message(query, text="❌ Error updating data. Please try again.")
-
 async def handle_instant_spin(query, context, user_id):
-    """Handle the 'NEXT' button with instant treasure discovery"""
+    """Handle the 'NEXT' button with instant treasure discovery - FIXED HISTORY TRACKING"""
     
     # Spend the query first
     success, spend_message = spend_fcb_token(user_id)
@@ -403,12 +428,13 @@ async def handle_instant_spin(query, context, user_id):
     
     try:
         # Check if we have cached opportunities
-        global FOMO_CACHE
+        from config import FOMO_CACHE
         if not FOMO_CACHE['coins'] or not FOMO_CACHE['coins']:
             # Fallback to live search if cache is empty
             await safe_edit_message(query, text="🔍 <b>Searching for fresh opportunities...</b>")
             
             # Quick scan for opportunities
+            from cache import get_ultra_fast_fomo_opportunities
             opportunities = await get_ultra_fast_fomo_opportunities()
             if opportunities:
                 FOMO_CACHE['coins'] = opportunities
@@ -437,6 +463,24 @@ async def handle_instant_spin(query, context, user_id):
                 'source_url': coin_data.get('source_url', 'https://coingecko.com')
             }
             
+            # 🔧 FIXED: UPDATE USER-SPECIFIC HISTORY WHEN SPINNING TO NEW COIN
+            new_coin_id = coin_data.get('coin') or coin_data.get('id') or coin_data.get('symbol', 'unknown')
+            logging.info(f"🔍 NEXT DEBUG: Got coin_id='{new_coin_id}' from cache data: {coin_data}")
+
+            # Validate the coin ID before adding to history
+            if not new_coin_id or new_coin_id == 'unknown' or new_coin_id == '':
+                logging.error(f"🔍 NEXT DEBUG: Invalid coin ID from cache: {coin_data}")
+                new_coin_id = coin_data.get('symbol', f"cache_{current_index}")
+
+            # Add to user's history
+            session = add_to_user_history(user_id, new_coin_id)
+            
+            # Also update the coin object to ensure consistency
+            coin['id'] = new_coin_id
+
+            logging.info(f"🎰 User {user_id}: History updated - Added {new_coin_id} via NEXT at position {session['index']}/{len(session['history'])}")
+            debug_user_session(user_id, "after NEXT button")
+
             # Format treasure discovery message
             msg = format_treasure_discovery_message(
                 coin, 
@@ -446,14 +490,24 @@ async def handle_instant_spin(query, context, user_id):
             )
             msg += f"\n\n💰 <i>{spend_message}</i>"
             
-            keyboard = build_addictive_buttons(coin)
+            # Build keyboard with user's balance info
+            fcb_balance, free_queries_used, new_user_bonus_used, total_free_remaining, has_received_bonus = get_user_balance(user_id)
+            user_balance_info = {
+                'fcb_balance': fcb_balance,
+                'free_queries_used': free_queries_used,
+                'new_user_bonus_used': new_user_bonus_used,
+                'total_free_remaining': total_free_remaining,
+                'has_received_bonus': has_received_bonus
+            }
+            
+            keyboard = build_addictive_buttons(coin, user_balance_info)
             
             # Try to send with logo first
             logo_url = coin.get('logo')
             if logo_url:
                 try:
-                    session = await get_optimized_session()
-                    async with session.get(logo_url) as response:
+                    api_session = await get_optimized_session()    # ← CHANGED
+                    async with api_session.get(logo_url) as response:    # ← CHANGED
                         if response.status == 200:
                             image_bytes = BytesIO(await response.read())
                             try:
@@ -485,8 +539,11 @@ async def handle_instant_spin(query, context, user_id):
         await safe_edit_message(query, text="❌ Error finding opportunities. Please try again.")
 
 async def handle_back_navigation(query, context, user_id):
-    """Handle the BACK button with FREE navigation - FIXED LOGO UPDATES"""
-    global coin_history, current_coin_index
+    """Handle the BACK button with FREE navigation - FIXED USER SESSIONS"""
+    
+    # 🔧 DEBUG: Log the back request
+    logging.info(f"🔍 BACK DEBUG: User {user_id} clicked back")
+    debug_user_session(user_id, "back button clicked")
     
     # Check if they have ANY scans available (just to prevent complete freeloaders)
     fcb_balance, _, _, total_free_remaining, _ = get_user_balance(user_id)
@@ -494,8 +551,8 @@ async def handle_back_navigation(query, context, user_id):
     
     if not has_any_scans:
         # Only show upgrade if they have zero scans
-        message = format_out_of_scans_refresh_message()
-        keyboard = build_out_of_scans_refresh_keyboard()
+        message = format_out_of_scans_back_message()
+        keyboard = build_out_of_scans_back_keyboard()
         await safe_edit_message(query, text=message, reply_markup=keyboard)
         return
     
@@ -503,33 +560,101 @@ async def handle_back_navigation(query, context, user_id):
     await safe_edit_message(query, text="⬅️ <b>Going back... (FREE navigation)</b>")
     
     try:
-        if not coin_history:
+        # Get user session
+        session = get_user_session(user_id)
+        
+        if not session['history']:
+            logging.warning(f"🔍 BACK DEBUG: No coin history for user {user_id}")
             await safe_edit_message(query, text="❌ No previous coins in this session.")
             return
         
-        # Move back in history
-        if current_coin_index > 0:
-            current_coin_index -= 1
-        # If already at first coin, stay there (ping same coin)
+        # 🔧 FIXED: Validate current index
+        if session['index'] < 0 or session['index'] >= len(session['history']):
+            logging.error(f"🔍 BACK DEBUG: Invalid index {session['index']} for history length {len(session['history'])}")
+            # Reset to last valid position
+            session['index'] = len(session['history']) - 1
+            logging.info(f"🔍 BACK DEBUG: Reset index to {session['index']}")
         
-        previous_coin_id = coin_history[current_coin_index]
+        # 🔧 PROPER BACK NAVIGATION LOGIC
+        if session['index'] > 0:
+            # Move back to previous coin
+            session['index'] -= 1
+            previous_coin_id = session['history'][session['index']]
+            logging.info(f"⬅️ User {user_id}: Moving back to position {session['index'] + 1}/{len(session['history'])}: {previous_coin_id}")
+        else:
+            # Already at first coin, stay there
+            previous_coin_id = session['history'][0]
+            logging.info(f"⬅️ User {user_id}: Already at first coin: {previous_coin_id}")
         
-        # Get coin info for the previous coin
-        coin_id, coin = await get_coin_info_ultra_fast(previous_coin_id)
-        
-        if not coin:
-            await safe_edit_message(query, text="❌ Unable to fetch data for previous coin.")
+        # 🔧 VALIDATE: Check the coin ID before fetching
+        if not previous_coin_id or previous_coin_id == 'unknown' or previous_coin_id == '':
+            logging.error(f"🔍 BACK DEBUG: Invalid coin ID '{previous_coin_id}' at position {session['index']}")
+            await safe_edit_message(query, text="❌ Invalid coin in history. Please start a new search.")
             return
         
-        # Run analysis on previous coin
-        fomo_score, signal_type, trend_status, distribution_status, volume_spike = await calculate_fomo_status_ultra_fast(coin)
+        logging.info(f"🔍 BACK DEBUG: Attempting to fetch data for coin: {previous_coin_id}")
+        
+        # 🔧 FETCH: Get coin info with better error handling
+        try:
+            coin_id, coin = await get_coin_info_ultra_fast(previous_coin_id)
+            logging.info(f"🔍 BACK DEBUG: Fetch result - coin_id: {coin_id}, coin data exists: {bool(coin)}")
+        except Exception as fetch_error:
+            logging.error(f"🔍 BACK DEBUG: Fetch error for {previous_coin_id}: {fetch_error}")
+            await safe_edit_message(query, text=f"❌ Error fetching data for {previous_coin_id}. It may have been delisted.")
+            return
+        
+        if not coin:
+            logging.error(f"🔍 BACK DEBUG: No coin data returned for {previous_coin_id}")
+            
+            # Try to skip to the previous coin in history if current one is delisted
+            attempts = 0
+            max_attempts = 3  # Prevent infinite loops
+            
+            while not coin and attempts < max_attempts and session['index'] > 0:
+                attempts += 1
+                logging.info(f"🔍 BACK DEBUG: Attempt {attempts} - Trying to skip delisted coin {previous_coin_id}")
+                
+                # Move back one more position
+                session['index'] -= 1
+                previous_coin_id = session['history'][session['index']]
+                
+                # Try fetching this previous coin
+                try:
+                    coin_id, coin = await get_coin_info_ultra_fast(previous_coin_id)
+                    if coin:
+                        logging.info(f"✅ BACK DEBUG: Found valid coin after skipping: {previous_coin_id}")
+                        break
+                    else:
+                        logging.warning(f"🔍 BACK DEBUG: Coin {previous_coin_id} also delisted, trying next...")
+                except Exception as fetch_error:
+                    logging.error(f"🔍 BACK DEBUG: Error fetching {previous_coin_id}: {fetch_error}")
+            
+            # If we still don't have a valid coin after attempts
+            if not coin:
+                if session['index'] <= 0:
+                    await safe_edit_message(query, text="❌ All previous coins in history appear to be delisted. Please start a new search.")
+                else:
+                    await safe_edit_message(query, text="❌ Unable to find any valid previous coins. Please start a new search.")
+                return
+        
+        logging.info(f"🔍 BACK DEBUG: Successfully fetched coin data for {coin_id}")
+        
+        # 🔧 ANALYSIS: Run analysis with error handling
+        try:
+            fomo_score, signal_type, trend_status, distribution_status, volume_spike = await calculate_fomo_status_ultra_fast(coin)
+            logging.info(f"🔍 BACK DEBUG: Analysis complete - FOMO score: {fomo_score}")
+        except Exception as analysis_error:
+            logging.error(f"🔍 BACK DEBUG: Analysis error: {analysis_error}")
+            # Continue with basic data if analysis fails
+            fomo_score, signal_type, volume_spike = 50, "Analysis Failed", 1.0
+            trend_status, distribution_status = "Unknown", "Unknown"
         
         # Format message
         msg = format_fomo_message(coin, fomo_score, signal_type, volume_spike, trend_status, distribution_status, is_broadcast=False)
         
         # Add navigation info
-        position = current_coin_index + 1
-        total = len(coin_history)
+        position = session['index'] + 1
+        total = len(session['history'])
         msg += f"\n\n⬅️ <i>History: {position}/{total} | Free navigation</i>"
         
         # Get user balance for buttons
@@ -544,12 +669,12 @@ async def handle_back_navigation(query, context, user_id):
         
         keyboard = build_addictive_buttons(coin, user_balance_info)
         
-        # 🔧 FIX: Handle logo updates properly
+        # 🔧 DISPLAY: Handle logo updates properly
         logo_url = coin.get('logo')
         if logo_url:
             try:
-                session = await get_optimized_session()
-                async with session.get(logo_url) as response:
+                api_session = await get_optimized_session()  # RENAMED to avoid conflict
+                async with api_session.get(logo_url) as response:
                     if response.status == 200:
                         image_bytes = BytesIO(await response.read())
                         
@@ -569,18 +694,19 @@ async def handle_back_navigation(query, context, user_id):
                             logging.warning(f"Photo send failed in BACK: {photo_error}")
             except Exception as e:
                 logging.warning(f"Image fetch failed in BACK: {e}")
-        
+
         # Fallback to text message if photo fails
         await safe_edit_message(query, text=msg, reply_markup=keyboard)
         
         logging.info(f"✅ BACK navigation complete: {previous_coin_id} (position {position}/{total})")
+        debug_user_session(user_id, "after back navigation")
         
     except Exception as e:
-        logging.error(f"Error in back navigation: {e}")
-        await safe_edit_message(query, text="❌ Error navigating back. Please try again.")
+        logging.error(f"❌ Error in back navigation: {e}", exc_info=True)
+        await safe_edit_message(query, text="❌ Error navigating back. Please try again or start a new search.")
 
 async def send_coin_message_ultra_fast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ULTRA-FAST coin message handler - NOW 5x FASTER!"""
+    """ULTRA-FAST coin message handler - FIXED HISTORY TRACKING"""
     if not update.message or not update.message.text:
         return
     
@@ -651,15 +777,16 @@ Type /buy to get started! 🚀"""
         # Get coin info with ultra-fast lookup
         coin_id, coin = await get_coin_info_ultra_fast(query)
         
+        # 🔧 ADD: Debug the coin lookup result
+        logging.info(f"🔍 COIN LOOKUP DEBUG: query='{query}' -> coin_id='{coin_id}', has_coin_data={bool(coin)}")
+
         if not coin:
             await searching_msg.edit_text('❌ Coin not found! Please check spelling.')
             return
 
-        # ADD THE HISTORY TRACKING HERE (after successful coin lookup):
-        global coin_history, current_coin_index
-        if not coin_history or coin_history[-1] != coin_id:
-            coin_history.append(coin_id)
-        current_coin_index = len(coin_history) - 1
+        # 🔧 FIXED: USER-SPECIFIC HISTORY TRACKING
+        session = add_to_user_history(user_id, coin_id)
+        debug_user_session(user_id, "after coin search")
         
         # Show basic info immediately
         from formatters import short_stat, emoji_for_percent
@@ -686,7 +813,17 @@ Type /buy to get started! 🚀"""
         msg = format_fomo_message(coin, fomo_score, signal_type, volume_spike, trend_status, distribution_status, is_broadcast=False)
         msg += f"\n\n💰 <i>{spend_message}</i>"
         
-        keyboard = build_addictive_buttons(coin)
+        # Build keyboard with user's balance info
+        fcb_balance, free_queries_used, new_user_bonus_used, total_free_remaining, has_received_bonus = get_user_balance(user_id)
+        user_balance_info = {
+            'fcb_balance': fcb_balance,
+            'free_queries_used': free_queries_used,
+            'new_user_bonus_used': new_user_bonus_used,
+            'total_free_remaining': total_free_remaining,
+            'has_received_bonus': has_received_bonus
+        }
+        
+        keyboard = build_addictive_buttons(coin, user_balance_info)
         
         # Clean up and send final message
         try:
@@ -698,8 +835,8 @@ Type /buy to get started! 🚀"""
         logo_url = coin.get('logo')
         if logo_url:
             try:
-                session = await get_optimized_session()
-                async with session.get(logo_url) as response:
+                api_session = await get_optimized_session()    # ← FIXED
+                async with api_session.get(logo_url) as response:    # ← FIXED
                     if response.status == 200:
                         image_bytes = BytesIO(await response.read())
                         await update.message.reply_photo(photo=image_bytes, caption=msg, parse_mode='HTML', reply_markup=keyboard)
@@ -709,7 +846,7 @@ Type /buy to get started! 🚀"""
                 
         await update.message.reply_text(msg, parse_mode='HTML', reply_markup=keyboard, disable_web_page_preview=True)
         
-        logging.info(f"✅ ULTRA-FAST analysis complete for {query} - 5x faster than before!")
+        logging.info(f"✅ ULTRA-FAST analysis complete for {query} - User session properly updated!")
         
     except Exception as e:
         logging.error(f"Error in ultra-fast analysis: {e}")
@@ -756,18 +893,13 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
     
     if not allowed:
         if reason == "No queries available":
-            message = format_out_of_scans_refresh_message()
-            keyboard = build_out_of_scans_refresh_keyboard()
+            message = format_out_of_scans_back_message()
+            keyboard = build_out_of_scans_back_keyboard()
             await safe_edit_message(query, text=message, reply_markup=keyboard)
         else:
             countdown_msg = create_countdown_visual(time_remaining)
             await safe_edit_message(query, text=countdown_msg)
         return
-    
-    # Handle Refresh button with instant response (legacy support)
-    if query.data.startswith("refresh_"):
-        coin_id = query.data.replace("refresh_", "")
-        await handle_instant_update(query, context, coin_id, user_id)
     
     # Handle Next/Spin button with instant response
     elif query.data == "next_coin":
@@ -941,6 +1073,7 @@ def setup_handlers(app):
     app.add_handler(CommandHandler('test', test_command))
     app.add_handler(CommandHandler('status', status_command))
     app.add_handler(CommandHandler('unsubscribe', unsubscribe_command))
+    app.add_handler(CommandHandler('debugsession', debug_session_command))  # NEW - session debug
     
     # Callback query handler for ALL buttons (purchase + addictive buttons)
     app.add_handler(CallbackQueryHandler(handle_callback_queries))
@@ -955,4 +1088,4 @@ def setup_handlers(app):
     # Error handler
     app.add_error_handler(error_handler)
     
-    logging.info("✅ All handlers setup complete")
+    logging.info("✅ All handlers setup complete with session-based navigation!")
