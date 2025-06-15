@@ -39,6 +39,32 @@ from scanner import add_user_to_notifications, subscribed_users, save_subscripti
 
 user_sessions = {}  # {user_id: {'history': [], 'index': 0, 'last_activity': timestamp}}
 
+def validate_coingecko_id(coin_id):
+    """Validate CoinGecko ID format - CRITICAL VALIDATION FROM YOUR RECENT FIX"""
+    if not coin_id or not isinstance(coin_id, str):
+        return False
+    
+    # Remove common invalid patterns that crash the API
+    invalid_patterns = [
+        'unknown', '', None, 'null', 'undefined',
+        'jerry-the-turtle-by-matt-furie',  # Your example of problematic ID
+        'agenda-47'  # Your example of problematic ID
+    ]
+    
+    if coin_id.lower() in [str(p).lower() for p in invalid_patterns if p]:
+        logging.warning(f"🔧 VALIDATION: Rejected known problematic ID: {coin_id}")
+        return False
+    
+    # Basic format validation
+    if len(coin_id) < 2 or len(coin_id) > 100:
+        return False
+    
+    # Check for suspicious patterns
+    if coin_id.count('-') > 10:  # Too many dashes usually indicates invalid ID
+        return False
+    
+    return True
+
 def get_user_session(user_id):
     """Get or create user-specific session"""
     current_time = time.time()
@@ -650,9 +676,9 @@ async def handle_back_navigation(query, context, user_id):
             await safe_edit_message(query, text="⬅️ You're already at the first coin in this session!")
             return
         
-        # 🔧 VALIDATE: Check the coin ID before fetching
-        if not target_coin_id or target_coin_id == 'unknown' or target_coin_id == '' or target_coin_id is None:
-            logging.error(f"🔍 BACK DEBUG: Invalid coin ID '{target_coin_id}' at position {session['index']}")
+        # 🔧 VALIDATE: Check the coin ID before fetching - USING VALIDATION FUNCTION
+        if not validate_coingecko_id(target_coin_id):
+            logging.error(f"🔍 BACK DEBUG: Invalid/problematic coin ID '{target_coin_id}' rejected by validation")
             await safe_edit_message(query, text="❌ Invalid coin in history. Please start a new search.")
             return
         
@@ -858,6 +884,216 @@ async def handle_back_navigation(query, context, user_id):
             except Exception:
                 pass
 
+async def handle_next_navigation(query, context, user_id):
+    """Handle the NEXT button with smart navigation - FREE forward through history, then new discoveries"""
+    
+    # 🔧 DEBUG: Log the next request
+    logging.info(f"🔍 NEXT DEBUG: User {user_id} clicked next")
+    
+    try:
+        # Get user session
+        session = get_user_session(user_id)
+        debug_user_session(user_id, "next button clicked")
+        
+        # Check if user has history and current position
+        history = session.get('history', [])
+        current_index = session.get('index', 0)
+        
+        # 🔧 KEY LOGIC: Check if user can move FORWARD through existing history
+        if history and current_index < len(history) - 1:
+            # Validate the target coin ID before proceeding
+            target_coin_id = history[current_index + 1]
+            if not validate_coingecko_id(target_coin_id):
+                logging.warning(f"🔍 NEXT DEBUG: Invalid coin ID in forward history: {target_coin_id}, falling back to new coin discovery")
+                # Fall through to new coin discovery instead of showing error
+            else:
+                # FREE forward navigation feedback
+                await safe_edit_message(query, text="➡️ <b>Moving forward... (FREE navigation)</b>")
+                
+                # Move forward to next coin in history
+                new_index = current_index + 1
+                session['index'] = new_index
+                
+                logging.info(f"➡️ User {user_id}: Moving forward from position {current_index + 1} to {new_index + 1}/{len(history)}: {target_coin_id}")
+                
+                # Use the same logic as your BACK button for fetching/displaying
+                success = await display_coin_from_history_forward(query, context, user_id, target_coin_id)
+                
+                if success:
+                    logging.info(f"✅ NEXT forward navigation complete: {target_coin_id} (position {new_index + 1}/{len(history)})")
+                    return
+                else:
+                    # If coin from history failed, fall through to find new coin
+                    logging.warning(f"🔍 NEXT DEBUG: Forward navigation failed, falling back to new coin discovery")
+        
+        # 🔧 NEW COIN DISCOVERY: User is at end of history or no history - find new coin
+        logging.info(f"🔍 NEXT DEBUG: At end of history or no history, finding new coin")
+        
+        # Check if they have scans available for NEW discoveries
+        fcb_balance, _, _, total_free_remaining, _ = get_user_balance(user_id)
+        has_scans = total_free_remaining > 0 or fcb_balance > 0
+        
+        if not has_scans:
+            # Show upgrade message for new discoveries
+            message = format_out_of_scans_message()
+            keyboard = build_out_of_scans_keyboard()
+            await safe_edit_message(query, text=message, reply_markup=keyboard)
+            return
+        
+        # Proceed with new coin discovery - CALL YOUR EXISTING FUNCTION
+        await safe_edit_message(query, text="🎰 <b>Finding new opportunity...</b>")
+        
+        await handle_instant_spin(query, context, user_id)
+        
+    except Exception as e:
+        logging.error(f"❌ CRITICAL ERROR in next navigation: {e}", exc_info=True)
+        try:
+            await safe_edit_message(query, text="❌ Error finding next coin. Please try again.")
+        except Exception as fallback_error:
+            logging.error(f"❌ Even fallback message failed: {fallback_error}")
+            try:
+                await query.answer("Error occurred, please try again")
+            except Exception:
+                pass
+
+async def display_coin_from_history_forward(query, context, user_id, target_coin_id):
+    """Display a coin from history for forward navigation - reuses your BACK logic"""
+    
+    logging.info(f"🔍 FORWARD DEBUG: Attempting to fetch data for coin: {target_coin_id}")
+    
+    # 🔧 ROBUST FETCH: Get coin info with intelligent fallback handling (same as BACK)
+    coin_id = None
+    coin = None
+    original_target = target_coin_id
+    
+    # Try multiple fetch strategies for better success rate
+    fetch_attempts = [
+        target_coin_id,  # Original ID
+        target_coin_id.lower(),  # Lowercase version
+        target_coin_id.replace('-', ''),  # Remove dashes
+        target_coin_id.split('-')[0] if '-' in target_coin_id else target_coin_id  # First part before dash
+    ]
+    
+    for attempt_id in fetch_attempts:
+        try:
+            logging.info(f"🔍 FORWARD DEBUG: Trying to fetch with ID: '{attempt_id}'")
+            coin_id, coin = await get_coin_info_ultra_fast(attempt_id)
+            
+            if coin and coin is not None:
+                logging.info(f"✅ FORWARD DEBUG: Success with ID '{attempt_id}' for original '{original_target}'")
+                target_coin_id = attempt_id
+                break
+            else:
+                logging.warning(f"🔍 FORWARD DEBUG: No data for ID '{attempt_id}'")
+                
+        except Exception as fetch_error:
+            logging.warning(f"🔍 FORWARD DEBUG: Fetch error for '{attempt_id}': {fetch_error}")
+            continue
+    
+    # If fetch failed
+    if not coin or coin is None:
+        logging.error(f"🔍 FORWARD DEBUG: All fetch attempts failed for {original_target}")
+        await safe_edit_message(query, text="❌ Unable to load coin from history. It may have been delisted.")
+        return False
+    
+    # 🔧 ANALYSIS: Run analysis with error handling
+    fomo_score = 50  # Default values
+    signal_type = "Analysis Failed"
+    volume_spike = 1.0
+    trend_status = "Unknown"
+    distribution_status = "Unknown"
+    
+    try:
+        fomo_score, signal_type, trend_status, distribution_status, volume_spike = await calculate_fomo_status_ultra_fast(coin)
+        logging.info(f"🔍 FORWARD DEBUG: Analysis complete - FOMO score: {fomo_score}")
+    except Exception as analysis_error:
+        logging.error(f"🔍 FORWARD DEBUG: Analysis error: {analysis_error}")
+        signal_type = "Analysis Unavailable"
+        trend_status = "Unknown"
+        distribution_status = "Unknown"
+    
+    # Format message with navigation info
+    try:
+        msg = format_fomo_message(coin, fomo_score, signal_type, volume_spike, trend_status, distribution_status, is_broadcast=False)
+        
+        # Add navigation info
+        session = get_user_session(user_id)
+        position = session['index'] + 1
+        total = len(session['history'])
+        can_go_back = session['index'] > 0
+        can_go_forward = session['index'] < total - 1
+        
+        # Add helpful navigation status for FORWARD
+        nav_status = "➡️ <i>Free navigation"
+        
+        if can_go_back and can_go_forward:
+            nav_status += f" | Position {position}/{total} | Can go back/forward"
+        elif can_go_back:
+            nav_status += f" | Position {position}/{total} | Can go back | Next will find new coin"
+        elif can_go_forward:
+            nav_status += f" | Position {position}/{total} | Can go forward"
+        else:
+            nav_status += f" | Position {position}/{total} | Next will find new coin"
+        nav_status += "</i>"
+        
+        msg += f"\n\n{nav_status}"
+        
+    except Exception as format_error:
+        logging.error(f"🔍 FORWARD DEBUG: Message formatting error: {format_error}")
+        coin_name = coin.get('name', 'Unknown') if coin else target_coin_id
+        msg = f"<b>{coin_name}</b>\n\n❌ Error formatting analysis. Please try again."
+    
+    # Get keyboard
+    try:
+        fcb_balance, free_queries_used, new_user_bonus_used, total_free_remaining, has_received_bonus = get_user_balance(user_id)
+        user_balance_info = {
+            'fcb_balance': fcb_balance,
+            'free_queries_used': free_queries_used,
+            'new_user_bonus_used': new_user_bonus_used,
+            'total_free_remaining': total_free_remaining,
+            'has_received_bonus': has_received_bonus
+        }
+        keyboard = build_addictive_buttons(coin, user_balance_info)
+    except Exception as balance_error:
+        logging.error(f"🔍 FORWARD DEBUG: Balance/keyboard error: {balance_error}")
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton('🎰 NEXT', callback_data="next_coin")],
+            [InlineKeyboardButton('⭐ TOP UP', callback_data='buy_starter')]
+        ])
+    
+    # Display with photo if available
+    photo_sent = False
+    logo_url = coin.get('logo') if coin else None
+    
+    if logo_url:
+        try:
+            api_session = await get_optimized_session()
+            async with api_session.get(logo_url, timeout=10) as response:
+                if response.status == 200:
+                    image_bytes = BytesIO(await response.read())
+                    
+                    try:
+                        await query.message.delete()
+                        await context.bot.send_photo(
+                            chat_id=query.message.chat_id,
+                            photo=image_bytes,
+                            caption=msg,
+                            parse_mode='HTML',
+                            reply_markup=keyboard
+                        )
+                        photo_sent = True
+                        logging.info(f"✅ Forward navigation with photo: {target_coin_id}")
+                    except Exception as photo_error:
+                        logging.warning(f"Photo send failed in forward: {photo_error}")
+        except Exception as e:
+            logging.warning(f"Image fetch failed in forward: {e}")
+
+    # Fallback to text message if photo fails
+    if not photo_sent:
+        await safe_edit_message(query, text=msg, reply_markup=keyboard)
+    
+    return True
+
 async def send_coin_message_ultra_fast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ULTRA-FAST coin message handler - FIXED HISTORY TRACKING"""
     if not update.message or not update.message.text:
@@ -1056,7 +1292,7 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
     
     # Handle Next/Spin button with instant response
     elif query.data == "next_coin":
-        await handle_instant_spin(query, context, user_id)
+        await handle_next_navigation(query, context, user_id)
     
     else:
         logging.warning(f"UNKNOWN CALLBACK: '{query.data}'")
