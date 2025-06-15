@@ -25,6 +25,7 @@ print(f"  • BOT_TOKEN: {prod_token[:10] + '... (prod)'}" if prod_token else " 
 print(f"  • TEST_BOT_TOKEN: {test_token[:10] + '... (test)'}" if test_token else "  • TEST_BOT_TOKEN: Not set (test)")
 print(f"  • BROADCAST_CHAT_ID: {os.getenv('BROADCAST_CHAT_ID')}")
 print(f"  • CoinGecko API Key: {os.getenv('COINGECKO_API_KEY')[:8]}...")
+print(f"  • SHORTIO_LINK_ID: {os.getenv('SHORTIO_LINK_ID')}")
 
 # =============================================================================
 # CORE CONFIGURATION
@@ -41,6 +42,9 @@ BROADCAST_CHAT_ID = os.getenv('BROADCAST_CHAT_ID')
 
 # API Configuration
 COINGECKO_API = "https://pro-api.coingecko.com/api/v3"
+
+# NEW: Tracking link configuration
+SHORTIO_LINK_ID = os.getenv('SHORTIO_LINK_ID', 'https://fomocryptopings.short.gy/coingeckosub+fomocryptopings')
 
 # =============================================================================
 # RATE LIMITING CONFIGURATION
@@ -162,6 +166,31 @@ INSTANT_SPIN_RESPONSES = [
 HISTORY_LOG = "fomo_variety_history.csv"
 
 # =============================================================================
+# HELPER FUNCTIONS FOR TRACKING LINKS
+# =============================================================================
+
+def get_buy_coin_url(coin_data):
+    """
+    Generate tracking URL for BUY COIN button
+    Uses SHORTIO_LINK_ID as base tracking link
+    """
+    # Get coin symbol for tracking
+    coin_symbol = coin_data.get('symbol', '').upper()
+    coin_id = coin_data.get('id', '')
+    
+    # Use the tracking link from environment variables
+    tracking_url = SHORTIO_LINK_ID
+    
+    # Add coin identifier to track which specific coin was clicked
+    if coin_symbol:
+        if '?' in tracking_url:
+            tracking_url += f"&coin={coin_symbol}"
+        else:
+            tracking_url += f"?coin={coin_symbol}"
+    
+    return tracking_url
+
+# =============================================================================
 # CONFIGURATION VALIDATION
 # =============================================================================
 
@@ -186,6 +215,11 @@ def validate_config():
     
     if not BROADCAST_CHAT_ID:
         warnings.append("BROADCAST_CHAT_ID is missing - no automatic alerts will be sent")
+
+    if not SHORTIO_LINK_ID:
+        warnings.append("SHORTIO_LINK_ID is missing - BUY COIN buttons will use fallback URLs")
+    elif not SHORTIO_LINK_ID.startswith('http'):
+        warnings.append("SHORTIO_LINK_ID should be a valid URL")
     
     # Test CoinGecko API with enhanced error handling
     if COINGECKO_API_KEY:

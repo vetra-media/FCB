@@ -19,7 +19,7 @@ from config import (
 )
 from api_client import fetch_market_data_ultra_fast, batch_processor
 from analysis import calculate_fomo_status_ultra_fast, analyze_momentum_trend, analyze_exchange_distribution, calculate_real_volume_spike
-from formatters import format_fomo_message, build_broadcast_keyboard
+from formatters import format_fomo_message, build_broadcast_keyboard, get_buy_coin_url
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
 # =============================================================================
@@ -398,15 +398,14 @@ async def broadcast_fomo_alert(bot, coin_data):
             is_broadcast=True
         )
         
-        # NEW: Addictive BACK/NEXT buttons instead of just Buy Now
-        # REPLACE WITH:
+        # Create keyboard with tracking URL for BUY COIN button
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton('⬅️ BACK', callback_data=f"back_{coin_data['coin']}"),
                 InlineKeyboardButton('🎰 NEXT', callback_data="next_coin")
             ],
             [
-                InlineKeyboardButton('💰 BUY THIS COIN', url=coin_info['source_url'])
+                InlineKeyboardButton('💰 BUY COIN', url=get_buy_coin_url(coin_info))
             ]
         ])
         

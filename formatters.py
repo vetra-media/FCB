@@ -63,6 +63,26 @@ def create_countdown_visual(seconds_remaining):
     else:
         return f"⏰ <b>Rate Limit</b>\n\nNext query available in {seconds_remaining} second.\n\n💡 <i>This protects our API costs!</i>"
 
+def get_buy_coin_url(coin_data):
+    """Generate tracking URL for BUY COIN button"""
+    from config import SHORTIO_LINK_ID
+    
+    # Get coin symbol for tracking
+    coin_symbol = coin_data.get('symbol', '').upper()
+    coin_id = coin_data.get('id', '')
+    
+    # Use the tracking link from environment variables
+    tracking_url = SHORTIO_LINK_ID
+    
+    # Add coin identifier to track which specific coin was clicked
+    if coin_symbol:
+        if '?' in tracking_url:
+            tracking_url += f"&coin={coin_symbol}"
+        else:
+            tracking_url += f"?coin={coin_symbol}"
+    
+    return tracking_url
+
 # =============================================================================
 # MAIN MESSAGE FORMATTING FUNCTIONS
 # =============================================================================
@@ -301,7 +321,7 @@ Thank you for supporting FOMO Crypto Bot! 🚀"""
 # =============================================================================
 
 def build_addictive_buttons(coin, user_balance_info=None):
-    """Create addictive buttons"""
+    """Create addictive buttons with tracking URL for BUY COIN"""
     # If no balance info provided, just show buttons without balance text
     balance_text = ""
     
@@ -319,13 +339,16 @@ def build_addictive_buttons(coin, user_balance_info=None):
     back_callback = f"back_{safe_coin_id}"
     next_callback = "next_coin"
     
+    # Use tracking URL for BUY COIN button
+    buy_coin_url = get_buy_coin_url(coin)
+    
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(f'⬅️ BACK{balance_text}', callback_data=back_callback),
             InlineKeyboardButton(f'🎰 NEXT{balance_text}', callback_data=next_callback)
         ],
         [
-            InlineKeyboardButton('💰 BUY COIN', url=coin.get('source_url', 'https://coingecko.com')),
+            InlineKeyboardButton('💰 BUY COIN', url=buy_coin_url),
             InlineKeyboardButton('⭐ TOP UP', callback_data='buy_starter')
         ]
     ])
@@ -341,14 +364,17 @@ def build_purchase_keyboard():
     ])
 
 def build_broadcast_keyboard(coin_data):
-    """Build keyboard for broadcast messages"""
+    """Build keyboard for broadcast messages with tracking URL"""
+    # Use tracking URL for BUY COIN button
+    buy_coin_url = get_buy_coin_url(coin_data)
+    
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton('⬅️ BACK', callback_data=f"back_{coin_data['coin']}"),
+            InlineKeyboardButton('⬅️ BACK', callback_data=f"back_{coin_data.get('id', coin_data.get('coin', 'unknown'))}"),
             InlineKeyboardButton('🎰 NEXT', callback_data="next_coin")
         ],
         [
-            InlineKeyboardButton('💰 BUY COIN', url=coin_data.get('source_url', 'https://coingecko.com')),
+            InlineKeyboardButton('💰 BUY COIN', url=buy_coin_url),
             InlineKeyboardButton('⭐ TOP UP', callback_data='buy_starter')
         ]
     ])
