@@ -201,21 +201,19 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     message = f"""👋 Welcome to <b>Fomo Crypto Bot</b>!
 
-✅ **You're now subscribed to FOMO alerts!**
+✅ **Type any coin name in chat to start the bot e.g. bitcoin**
 
-You'll receive high-quality FOMO alerts directly here with full interactivity:
-- ⬅️ BACK button works
-- 🎰 NEXT button works  
-- 💰 BUY button works
+- 🎰 NEXT for new opportunities 
+- ⬅️ BACK through previous coins
+- 💰 BUY where to buy coins
+- ⭐ TOP UP for more scans
 
 📺 See our public track record: https://t.me/fomocryptobot_alert
-📋 T&C's + Disclaimer @freecryptopings
+📋 T&C's in pin @freecryptopings
 
 💡 **New Commands:**
 - `/test` - Test your notification subscription
-- `/status` - Check subscriber count and your status
-
-Type any coin name to test the bot!"""
+- `/status` - Check your balance and status"""
     
     await update.message.reply_text(message, parse_mode='HTML')
 
@@ -417,11 +415,10 @@ async def terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ⚖️ <b>Full Terms:</b> @freecryptopings (see pinned message)
     
 🚨 <b>Key Points:</b>
-• Not financial advice
-• High risk - you could lose everything  
-• 100% FOMO ≠ 100% success
-• Must be 18+ and legally able to trade crypto
-• We earn via Stars + affiliate links
+- High risk - you could lose everything  
+- 100% FOMO ≠ 100% success
+- Must be 18+ and legally able to trade crypto
+- We earn via Stars + affiliate links
 
 <i>By using this bot, you accept these terms.</i>"""
     

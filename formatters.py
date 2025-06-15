@@ -96,8 +96,7 @@ def format_fomo_message(coin, fomo_score, signal_type, volume_spike, trend_statu
         "",
         "📊 <i>High FOMO = Better Odds</i>",
         "",
-        "📋 T&C's + Disclaimer @freecryptopings",
-        "<i>Not financial advice. Always DYOR.</i>"
+        "📋 T&C's in pin @freecryptopings",
     ]
     
     if is_broadcast:
@@ -198,7 +197,7 @@ Consider upgrading before you find that next 🚀 opportunity!"""
 - Everyone: {FREE_QUERIES_PER_DAY} daily scans  
 - Premium: Unlimited with FCB tokens
 
-📋 T&C's + Disclaimer @freecryptopings
+📋 T&C's in pin @freecryptopings
 
 Need more? Use /buy"""
 
@@ -237,7 +236,7 @@ Settings → Stars → Buy More Stars
 - 🎰 NEXT button always works
 - Same algorithm as our 70%+ alerts
 
-📋 T&C's + Disclaimer @freecryptopings
+📋 T&C's in pin @freecryptopings
 
 <i>Payment processed instantly via Telegram!</i>"""
 
@@ -428,6 +427,4 @@ def get_help_message():
 • Burst rate limiting (instant first 10 calls)
 • Optimized connection pooling
 
-📋 T&C's + Disclaimer @freecryptopings
-
-<i>Not financial advice. Always DYOR!</i>"""
+📋 T&C's in pin @freecryptopings"""
