@@ -299,6 +299,45 @@ def calculate_fomo_status_cg(coin):
         "source_url": f'https://www.coingecko.com/en/coins/{coin.get("id", "")}'
     }
 
+async def calculate_fomo_status_cg_predictive(coin):
+    """Enhanced scanner with predictive elements"""
+    
+    # Convert CoinGecko format to standard format
+    coin_data = {
+        'id': coin.get('id', ''),
+        'symbol': coin.get('symbol', ''),
+        'name': coin.get('name', ''),
+        'price': coin.get('current_price', 0),
+        'volume': coin.get('total_volume', 0),
+        'market_cap': coin.get('market_cap', 0),
+        'market_cap_rank': coin.get('market_cap_rank', 999999),
+        'change_1h': coin.get('price_change_percentage_1h_in_currency', 0),
+        'change_24h': coin.get('price_change_percentage_24h_in_currency', 0)
+    }
+    
+    # Use enhanced algorithm (returns tuple not dict)
+    from analysis import calculate_fomo_status_ultra_fast_enhanced
+    result = await calculate_fomo_status_ultra_fast_enhanced(coin_data)
+    
+    # Unpack the tuple result
+    fomo_score, signal_type, trend_status, distribution_status, volume_spike = result
+    
+    # Return in scanner format
+    return {
+        "coin": coin.get('id', ''),
+        "symbol": coin.get('symbol', ''),
+        "name": coin.get('name', ''),
+        "current_price": coin.get('current_price') or 0,
+        "price_1h_change (%)": round(coin_data['change_1h'], 2),
+        "price_24h_change (%)": round(coin_data['change_24h'], 2),
+        "volume_24h": round(coin_data['volume'], 2),
+        "volume_spike": round(volume_spike, 2),
+        "fomo_score": fomo_score,
+        "signal_type": signal_type,
+        "logo": coin.get('image'),
+        "source_url": f'https://www.coingecko.com/en/coins/{coin.get("id", "")}'
+    }
+
 # =============================================================================
 # FOMO SCANNING FUNCTIONS - OPTIMIZED FOR PRO API
 # =============================================================================
@@ -336,7 +375,7 @@ async def find_top_fomo_coin():
                 if coin.get(field) is None:
                     coin[field] = 0
                     
-            fomo = calculate_fomo_status_cg(coin)
+            fomo = await calculate_fomo_status_cg_predictive(coin)
             
             if fomo['fomo_score'] > best_score:  # Broadcast the best coin, regardless of score
                 best_coin = fomo

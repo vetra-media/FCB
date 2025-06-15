@@ -16,6 +16,7 @@ Enhanced Analysis module for CFB (Crypto FOMO Bot) v2.1 CORRECTED
 Based on actual research findings: mid-cap altcoins outperform major coins
 """
 
+import statistics 
 import asyncio
 import logging
 import time
@@ -1035,8 +1036,8 @@ print("🧪 Ready to test with your existing test functions below!")
 # MAIN ENHANCED FUNCTION (RECOMMENDED)
 # =============================================================================
 
-# SAFE: Keep original for now, test enhanced version gradually
-calculate_fomo_status_ultra_fast = calculate_fomo_status_ultra_fast_v21
+# PREDICTIVE: Use new predictive algorithm (SAFE - backward compatible)
+calculate_fomo_status_ultra_fast = calculate_fomo_status_ultra_fast_enhanced
 
 # AGGRESSIVE: Use enhanced version immediately  
 # calculate_fomo_status_ultra_fast = calculate_fomo_status_ultra_fast_enhanced
@@ -1166,3 +1167,550 @@ async def quick_test():
 # if __name__ == "__main__":
 #     import asyncio
 #     asyncio.run(quick_test())
+
+# =============================================================================
+# PREDICTIVE FOMO ALGORITHM v3.0 - ADDITION ONLY
+# =============================================================================
+
+import statistics
+from typing import Dict, List, Tuple, Optional
+
+class PredictiveFOMOAnalyzer:
+    """
+    Advanced forecasting system to catch outliers before they explode
+    Focus on LEADING indicators, not lagging ones
+    """
+    
+    def __init__(self):
+        # Thresholds calibrated for outlier detection
+        self.outlier_market_cap_max = 100_000_000  # $100M max - true outliers
+        self.min_volume_threshold = 25_000  # Minimum activity level
+        self.accumulation_window_days = 14  # Look back period for patterns
+        
+        # Pattern recognition weights
+        self.pattern_weights = {
+            'stealth_accumulation': 30,    # Highest weight - best predictor
+            'volume_acceleration': 25,     # Volume trend building
+            'wallet_concentration': 20,    # Whale accumulation
+            'market_timing': 15,           # Sector/market conditions
+            'technical_setup': 10          # Price patterns
+        }
+    
+    async def analyze_predictive_signals(self, coin_data: Dict) -> Tuple[int, str, Dict]:
+        """
+        Main predictive analysis - returns forecasting score (0-100)
+        Higher score = higher probability of future pump
+        """
+        
+        coin_id = coin_data.get('id', '')
+        current_price = float(coin_data.get('price', 0) or 0)
+        current_volume = float(coin_data.get('volume', 0) or 0)
+        market_cap = float(coin_data.get('market_cap', 0) or 0)
+        
+        # Initialize prediction components
+        prediction_score = 0
+        signals_detected = []
+        analysis_details = {}
+        
+        # SIGNAL 1: Stealth Accumulation Pattern (30 points max)
+        stealth_score, stealth_details = await self.detect_stealth_accumulation(
+            coin_id, current_volume, current_price
+        )
+        prediction_score += stealth_score
+        analysis_details['stealth_accumulation'] = stealth_details
+        if stealth_score >= 20:
+            signals_detected.append("🔍 Stealth Accumulation")
+        
+        # SIGNAL 2: Volume Acceleration Pattern (25 points max)
+        acceleration_score, acceleration_details = await self.detect_volume_acceleration(
+            coin_id, current_volume
+        )
+        prediction_score += acceleration_score
+        analysis_details['volume_acceleration'] = acceleration_details
+        if acceleration_score >= 15:
+            signals_detected.append("📈 Volume Building")
+        
+        # SIGNAL 3: Wallet Concentration Analysis (20 points max)
+        concentration_score, concentration_details = await self.analyze_wallet_concentration(
+            coin_id, market_cap
+        )
+        prediction_score += concentration_score
+        analysis_details['wallet_concentration'] = concentration_details
+        if concentration_score >= 12:
+            signals_detected.append("🐋 Whale Activity")
+        
+        # SIGNAL 4: Market Timing Factors (15 points max)
+        timing_score, timing_details = self.analyze_market_timing(coin_data)
+        prediction_score += timing_score
+        analysis_details['market_timing'] = timing_details
+        if timing_score >= 10:
+            signals_detected.append("⏰ Market Timing")
+        
+        # SIGNAL 5: Technical Setup (10 points max)
+        technical_score, technical_details = await self.analyze_technical_setup(
+            coin_id, current_price
+        )
+        prediction_score += technical_score
+        analysis_details['technical_setup'] = technical_details
+        if technical_score >= 6:
+            signals_detected.append("📊 Technical Setup")
+        
+        # OUTLIER BONUS: Extra points for true unknowns
+        outlier_bonus = self.calculate_outlier_bonus(coin_data)
+        prediction_score += outlier_bonus
+        if outlier_bonus > 0:
+            signals_detected.append(f"💎 Outlier Gem (+{outlier_bonus})")
+        
+        # Generate prediction signal
+        prediction_signal = self.generate_prediction_signal(
+            prediction_score, signals_detected, market_cap
+        )
+        
+        return min(100, prediction_score), prediction_signal, analysis_details
+    
+    async def detect_stealth_accumulation(self, coin_id: str, current_volume: float, current_price: float) -> Tuple[int, Dict]:
+        """
+        MOST IMPORTANT: Detect accumulation BEFORE price moves
+        This is the holy grail of prediction
+        """
+        try:
+            # Get 14-day volume and price history
+            ohlcv = await fetch_ohlcv_data_ultra_fast(coin_id, days=14)
+            
+            if not ohlcv or 'total_volumes' not in ohlcv or 'prices' not in ohlcv:
+                return 0, {"error": "No historical data"}
+            
+            volumes = [v[1] for v in ohlcv["total_volumes"]]
+            prices = [p[1] for p in ohlcv["prices"]]
+            
+            if len(volumes) < 7 or len(prices) < 7:
+                return 0, {"error": "Insufficient data"}
+            
+            # Calculate accumulation indicators
+            score = 0
+            details = {}
+            
+            # 1. Volume Trend Without Price Movement (KEY PREDICTOR)
+            recent_vol_avg = statistics.mean(volumes[-3:])
+            older_vol_avg = statistics.mean(volumes[-10:-3])
+            vol_growth = (recent_vol_avg / older_vol_avg) if older_vol_avg > 0 else 1
+            
+            recent_price_change = (prices[-1] - prices[-7]) / prices[-7] * 100
+            
+            # HIGH SCORE: Volume increasing while price stable/declining
+            if vol_growth >= 2.0 and abs(recent_price_change) < 5:
+                score += 25  # JACKPOT: Volume up, price flat
+                details['pattern'] = "Perfect stealth accumulation"
+            elif vol_growth >= 1.5 and abs(recent_price_change) < 10:
+                score += 15  # Good accumulation
+                details['pattern'] = "Moderate accumulation"
+            elif vol_growth >= 1.2 and recent_price_change < 0:
+                score += 10  # Buying the dip
+                details['pattern'] = "Dip accumulation"
+            
+            # 2. Consistent Volume Growth (Predictive)
+            vol_consistency = self.calculate_trend_consistency(volumes[-7:])
+            if vol_consistency > 0.7:  # Steady upward trend
+                score += 8
+                details['consistency'] = "High volume consistency"
+            
+            # 3. Volume Spikes During Price Dips (Contrarian buying)
+            dip_buying_score = self.detect_dip_buying_pattern(volumes, prices)
+            score += dip_buying_score
+            if dip_buying_score > 0:
+                details['dip_buying'] = f"Contrarian buying detected (+{dip_buying_score})"
+            
+            details.update({
+                'vol_growth': vol_growth,
+                'price_change_7d': recent_price_change,
+                'current_volume': current_volume,
+                'avg_volume': recent_vol_avg
+            })
+            
+            return min(30, score), details
+            
+        except Exception as e:
+            logging.error(f"Stealth accumulation analysis error: {e}")
+            return 0, {"error": str(e)}
+    
+    async def detect_volume_acceleration(self, coin_id: str, current_volume: float) -> Tuple[int, Dict]:
+        """
+        Detect if volume is ACCELERATING (not just high)
+        Acceleration predicts breakouts better than absolute volume
+        """
+        try:
+            ohlcv = await fetch_ohlcv_data_ultra_fast(coin_id, days=21)
+            
+            if not ohlcv or 'total_volumes' not in ohlcv:
+                return 0, {"error": "No volume data"}
+            
+            volumes = [v[1] for v in ohlcv["total_volumes"]]
+            if len(volumes) < 14:
+                return 0, {"error": "Insufficient volume data"}
+            
+            score = 0
+            details = {}
+            
+            # Calculate volume acceleration (rate of change of rate of change)
+            week1_avg = statistics.mean(volumes[-7:])      # This week
+            week2_avg = statistics.mean(volumes[-14:-7])   # Last week  
+            week3_avg = statistics.mean(volumes[-21:-14])  # 2 weeks ago
+            
+            # Acceleration calculation
+            recent_growth = (week1_avg / week2_avg) if week2_avg > 0 else 1
+            previous_growth = (week2_avg / week3_avg) if week3_avg > 0 else 1
+            acceleration = recent_growth / previous_growth if previous_growth > 0 else 1
+            
+            # Score based on acceleration magnitude
+            if acceleration >= 2.0:  # Volume growth is accelerating fast
+                score += 20
+                details['pattern'] = "Rapid acceleration"
+            elif acceleration >= 1.5:
+                score += 12
+                details['pattern'] = "Moderate acceleration"
+            elif acceleration >= 1.2:
+                score += 6
+                details['pattern'] = "Mild acceleration"
+            
+            # Bonus for sustained acceleration
+            if recent_growth > 1.3 and previous_growth > 1.2:
+                score += 5
+                details['sustained'] = True
+            
+            details.update({
+                'acceleration': acceleration,
+                'recent_growth': recent_growth,
+                'week1_avg': week1_avg,
+                'week2_avg': week2_avg
+            })
+            
+            return min(25, score), details
+            
+        except Exception as e:
+            logging.error(f"Volume acceleration analysis error: {e}")
+            return 0, {"error": str(e)}
+    
+    async def analyze_wallet_concentration(self, coin_id: str, market_cap: float) -> Tuple[int, Dict]:
+        """
+        Analyze wallet distribution for whale accumulation patterns
+        High concentration can indicate insider/whale accumulation
+        """
+        try:
+            # Use exchange distribution as proxy for wallet concentration
+            ticker_data = await fetch_ticker_data_ultra_fast(coin_id)
+            
+            if not ticker_data or 'tickers' not in ticker_data:
+                return 0, {"error": "No exchange data"}
+            
+            tickers = ticker_data['tickers']
+            if not tickers:
+                return 0, {"error": "No ticker data"}
+            
+            score = 0
+            details = {}
+            
+            # Calculate exchange concentration
+            total_volume = sum(float(t.get('converted_volume', {}).get('usd', 0) or 0) for t in tickers)
+            if total_volume == 0:
+                return 0, {"error": "No volume data"}
+            
+            # Sort by volume
+            exchange_volumes = {}
+            for ticker in tickers:
+                exchange = ticker.get('market', {}).get('name', 'Unknown')
+                volume = float(ticker.get('converted_volume', {}).get('usd', 0) or 0)
+                exchange_volumes[exchange] = exchange_volumes.get(exchange, 0) + volume
+            
+            sorted_exchanges = sorted(exchange_volumes.items(), key=lambda x: x[1], reverse=True)
+            
+            if sorted_exchanges:
+                top_exchange_share = sorted_exchanges[0][1] / total_volume
+                
+                # DEX concentration often indicates early accumulation
+                top_exchange = sorted_exchanges[0][0].lower()
+                if any(dex in top_exchange for dex in ['uniswap', 'pancake', 'dex', 'aerodrome']):
+                    if 0.6 <= top_exchange_share <= 0.9:  # Sweet spot
+                        score += 15
+                        details['pattern'] = "DEX accumulation phase"
+                    elif top_exchange_share > 0.9:
+                        score += 8  # Too concentrated
+                        details['pattern'] = "High DEX concentration"
+                
+                # Multiple smaller exchanges can indicate organic growth
+                active_exchanges = len([v for v in exchange_volumes.values() if v > total_volume * 0.05])
+                if active_exchanges >= 3 and top_exchange_share < 0.7:
+                    score += 10
+                    details['pattern'] = "Distributed accumulation"
+                
+                details.update({
+                    'top_exchange': sorted_exchanges[0][0],
+                    'top_share': top_exchange_share,
+                    'active_exchanges': active_exchanges,
+                    'total_volume': total_volume
+                })
+            
+            return min(20, score), details
+            
+        except Exception as e:
+            logging.error(f"Wallet concentration analysis error: {e}")
+            return 0, {"error": str(e)}
+    
+    def analyze_market_timing(self, coin_data: Dict) -> Tuple[int, Dict]:
+        """
+        Analyze market timing factors that influence pump probability
+        """
+        score = 0
+        details = {}
+        
+        # Time-based patterns
+        now = datetime.now()
+        
+        # Day of week patterns (from your existing research)
+        day_weights = {1: 1.15, 4: 1.15}  # Tuesday, Friday
+        if now.weekday() in day_weights:
+            score += 5
+            details['favorable_day'] = f"{now.strftime('%A')} (historical advantage)"
+        
+        # Month patterns
+        if now.month in [4, 10, 11]:  # April, October, November
+            score += 5
+            details['favorable_month'] = f"{now.strftime('%B')} (bull season)"
+        
+        # Market cap category timing
+        market_cap = float(coin_data.get('market_cap', 0) or 0)
+        if 10_000_000 <= market_cap <= 100_000_000:  # $10M-$100M sweet spot
+            score += 5
+            details['market_cap_timing'] = "Optimal growth range"
+        
+        return score, details
+    
+    async def analyze_technical_setup(self, coin_id: str, current_price: float) -> Tuple[int, Dict]:
+        """
+        Analyze technical patterns that precede breakouts
+        """
+        try:
+            ohlcv = await fetch_ohlcv_data_ultra_fast(coin_id, days=30)
+            
+            if not ohlcv or 'prices' not in ohlcv:
+                return 0, {"error": "No price data"}
+            
+            prices = [p[1] for p in ohlcv["prices"]]
+            if len(prices) < 20:
+                return 0, {"error": "Insufficient price data"}
+            
+            score = 0
+            details = {}
+            
+            # Support/resistance levels
+            recent_high = max(prices[-14:])
+            recent_low = min(prices[-14:])
+            price_range = (recent_high - recent_low) / recent_low * 100
+            
+            # Consolidation pattern (low volatility before breakout)
+            if 5 <= price_range <= 25:  # Tight consolidation
+                score += 6
+                details['pattern'] = "Consolidation detected"
+            
+            # Price position in range
+            price_position = (current_price - recent_low) / (recent_high - recent_low)
+            if 0.3 <= price_position <= 0.7:  # Middle of range
+                score += 2
+                details['position'] = "Mid-range (breakout potential)"
+            elif price_position > 0.8:  # Near resistance
+                score += 4
+                details['position'] = "Testing resistance"
+            
+            details.update({
+                'recent_high': recent_high,
+                'recent_low': recent_low,
+                'price_range_pct': price_range,
+                'price_position': price_position
+            })
+            
+            return min(10, score), details
+            
+        except Exception as e:
+            logging.error(f"Technical analysis error: {e}")
+            return 0, {"error": str(e)}
+    
+    def calculate_outlier_bonus(self, coin_data: Dict) -> int:
+        """
+        Extra points for true outlier characteristics
+        """
+        bonus = 0
+        
+        market_cap = float(coin_data.get('market_cap', 0) or 0)
+        market_cap_rank = coin_data.get('market_cap_rank', 999999)
+        
+        # True outlier: Low market cap + high rank number
+        if market_cap < 50_000_000 and market_cap_rank > 1000:
+            bonus += 15  # Major outlier bonus
+        elif market_cap < 100_000_000 and market_cap_rank > 500:
+            bonus += 10  # Moderate outlier bonus
+        elif market_cap_rank > 300:
+            bonus += 5   # Minor outlier bonus
+        
+        # New token bonus (if detectable)
+        age_indicators = ['2024', 'v2', 'new', 'gen2']
+        coin_name = coin_data.get('name', '').lower()
+        if any(indicator in coin_name for indicator in age_indicators):
+            bonus += 5
+        
+        return bonus
+    
+    def calculate_trend_consistency(self, values: List[float]) -> float:
+        """Calculate how consistently a trend is moving in one direction"""
+        if len(values) < 3:
+            return 0
+        
+        differences = [values[i+1] - values[i] for i in range(len(values)-1)]
+        positive_diffs = sum(1 for d in differences if d > 0)
+        return positive_diffs / len(differences)
+    
+    def detect_dip_buying_pattern(self, volumes: List[float], prices: List[float]) -> int:
+        """Detect if volume spikes occur during price dips (contrarian buying)"""
+        if len(volumes) != len(prices) or len(volumes) < 7:
+            return 0
+        
+        score = 0
+        for i in range(3, len(prices)-1):  # Look for patterns
+            price_change = (prices[i] - prices[i-1]) / prices[i-1] * 100
+            volume_change = (volumes[i] - volumes[i-1]) / volumes[i-1] * 100
+            
+            # Volume spike during price dip
+            if price_change < -2 and volume_change > 50:
+                score += 3  # Strong contrarian signal
+            elif price_change < 0 and volume_change > 20:
+                score += 1  # Mild contrarian signal
+        
+        return min(score, 7)  # Cap the bonus
+    
+    def generate_prediction_signal(self, score: int, signals: List[str], market_cap: float) -> str:
+        """Generate human-readable prediction signal"""
+        
+        if score >= 80:
+            return "🚀 HIGH PUMP PROBABILITY"
+        elif score >= 65:
+            return "⚡ STRONG ACCUMULATION"
+        elif score >= 50:
+            return "📈 BUILDING MOMENTUM"
+        elif score >= 35:
+            return "👀 EARLY SIGNALS"
+        elif score >= 20:
+            return "🔍 WATCH CLOSELY"
+        else:
+            return "😴 LOW PREDICTION"
+
+
+# Initialize predictive analyzer
+predictive_analyzer = PredictiveFOMOAnalyzer()
+
+# =============================================================================
+# MAIN PREDICTIVE FUNCTION
+# =============================================================================
+
+async def calculate_predictive_fomo_score(coin_data):
+    """
+    Enhanced FOMO calculation with predictive elements
+    Combines existing reactive scoring with new predictive analysis
+    """
+    
+    # Run existing FOMO analysis
+    reactive_score, signal_type, trend_status, distribution_status, volume_spike = await calculate_fomo_status_ultra_fast_v21(coin_data)
+    
+    # Run new predictive analysis
+    predictive_score, prediction_signal, analysis_details = await predictive_analyzer.analyze_predictive_signals(coin_data)
+    
+    # Combine scores (weighted average)
+    reactive_weight = 0.4  # 40% reactive
+    predictive_weight = 0.6  # 60% predictive (for forecasting focus)
+    
+    combined_score = int(reactive_score * reactive_weight + predictive_score * predictive_weight)
+    
+    # Enhanced signal type
+    if predictive_score >= 65:
+        enhanced_signal = f"🔮 {prediction_signal}"
+    elif predictive_score >= 35:
+        enhanced_signal = f"📊 {prediction_signal} | {signal_type}"
+    else:
+        enhanced_signal = signal_type
+    
+    # Add prediction confidence
+    confidence_level = "High" if predictive_score >= 60 else "Medium" if predictive_score >= 30 else "Low"
+    
+    return {
+        'combined_score': combined_score,
+        'enhanced_signal': enhanced_signal,
+        'reactive_score': reactive_score,
+        'predictive_score': predictive_score,
+        'prediction_confidence': confidence_level,
+        'trend_status': trend_status,
+        'distribution_status': distribution_status,
+        'volume_spike': volume_spike,
+        'analysis_details': analysis_details
+    }
+
+# =============================================================================
+# BACKWARD COMPATIBLE WRAPPER
+# =============================================================================
+
+async def calculate_fomo_status_ultra_fast_predictive(coin_data):
+    """
+    Drop-in replacement for existing function with predictive power
+    Returns same format as original for compatibility
+    """
+    result = await calculate_predictive_fomo_score(coin_data)
+    
+    # Return in original tuple format
+    return (
+        result['combined_score'],
+        result['enhanced_signal'],
+        result['trend_status'],
+        result['distribution_status'],
+        result['volume_spike']
+    )
+
+    # =============================================================================
+# TESTING FUNCTIONS
+# =============================================================================
+
+async def test_predictive_vs_original():
+    """Test predictive algorithm against original on sample data"""
+    
+    # Test coin data
+    test_coin = {
+        'id': 'test-outlier',
+        'symbol': 'TEST',
+        'name': 'Test Outlier Coin',
+        'price': 0.00234,
+        'volume': 150000,
+        'market_cap': 25000000,  # $25M outlier
+        'market_cap_rank': 850,
+        'change_1h': 1.2,
+        'change_24h': -1.5  # Slight dip - good for accumulation
+    }
+    
+    print("🧪 TESTING PREDICTIVE vs ORIGINAL")
+    print("=" * 50)
+    
+    try:
+        # Test original
+        original = await calculate_fomo_status_ultra_fast_v21(test_coin)
+        print(f"📈 ORIGINAL: Score={original[0]}, Signal='{original[1]}'")
+        
+        # Test predictive
+        predictive = await calculate_predictive_fomo_score(test_coin)
+        print(f"🔮 PREDICTIVE: Score={predictive['combined_score']}, Signal='{predictive['enhanced_signal']}'")
+        
+        # Show improvement
+        improvement = predictive['combined_score'] - original[0]
+        print(f"✨ IMPROVEMENT: +{improvement} points")
+        
+        # Test wrapper (should match predictive)
+        wrapper = await calculate_fomo_status_ultra_fast_predictive(test_coin)
+        print(f"🔄 WRAPPER: Score={wrapper[0]}, Signal='{wrapper[1]}'")
+        
+        print("\n✅ All tests completed successfully!")
+        
+    except Exception as e:
+        print(f"❌ Test failed: {e}")
