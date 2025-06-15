@@ -209,6 +209,7 @@ You'll receive high-quality FOMO alerts directly here with full interactivity:
 - 💰 BUY button works
 
 📺 See our public track record: https://t.me/fomocryptobot_alert
+📋 T&C's + Disclaimer @freecryptopings
 
 💡 **New Commands:**
 - `/test` - Test your notification subscription
@@ -408,6 +409,23 @@ async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         logging.info(f"User {username} (ID: {user_id}) unsubscribed from FOMO alerts")
     else:
         await update.message.reply_text("ℹ️ You are not currently subscribed.", parse_mode='HTML')
+
+async def terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /terms command"""
+    message = """📋 <b>Terms & Disclaimer</b>
+    
+⚖️ <b>Full Terms:</b> @freecryptopings (see pinned message)
+    
+🚨 <b>Key Points:</b>
+• Not financial advice
+• High risk - you could lose everything  
+• 100% FOMO ≠ 100% success
+• Must be 18+ and legally able to trade crypto
+• We earn via Stars + affiliate links
+
+<i>By using this bot, you accept these terms.</i>"""
+    
+    await update.message.reply_text(message, parse_mode='HTML')
 
 # =============================================================================
 # ULTRA-FAST MESSAGE HANDLERS
@@ -1067,6 +1085,7 @@ def setup_handlers(app):
     # Command handlers
     app.add_handler(CommandHandler('start', start_command))
     app.add_handler(CommandHandler('help', help_command))
+    app.add_handler(CommandHandler('terms', terms_command))
     app.add_handler(CommandHandler('buy', buy_command))
     app.add_handler(CommandHandler('debug', debug_balance_command))
     app.add_handler(CommandHandler('balance', balance_command))
