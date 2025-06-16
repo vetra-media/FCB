@@ -317,6 +317,70 @@ Thank you for supporting FOMO Crypto Bot! 🚀"""
     return message
 
 # =============================================================================
+# ENHANCED MESSAGE FORMATTERS WITH BACK BUTTON SUPPORT
+# =============================================================================
+
+def format_out_of_scans_message_with_back(query=None):
+    """Enhanced out of scans message with friendlier tone"""
+    if query:
+        message = f"""💔 FOMO Scan Limit Reached!
+
+You wanted to analyze {query.upper()} but you're out of scans.
+
+😤 This is frustrating, right?
+What if {query} is about to 🚀 and you're missing it?
+
+💎 Premium users would see:
+- Real-time FOMO score for {query}
+- Volume spike analysis  
+- ⬅️ Back & 🎰 Spin buttons
+- Unlimited market scanning
+
+🚨 Don't miss the next moon shot!
+
+💫 Get 100 scans for just 100 Telegram Stars!
+
+Or go back to explore other features..."""
+    else:
+        message = """💔 Out of FOMO Scans!
+
+You've used all your free scans for today.
+
+🎯 Get More Scans:
+- Buy FCB tokens with premium packages
+- Get unlimited scans instantly!
+
+💡 Why upgrade?
+- No daily limits
+- Instant FOMO analysis
+- Premium features
+
+Or go back to explore other features..."""
+    
+    return message
+
+def format_out_of_scans_back_message_with_navigation():
+    """Enhanced back message with navigation options"""
+    return """💔 Out of FOMO Scans!
+
+You wanted fresh data but you're out of scans.
+
+🚨 The market is moving fast!
+While you wait, opportunities might be slipping away...
+
+💎 Premium users are getting:
+- Real-time updates every second
+- Fresh 🎰 Spin recommendations  
+- Never missing a moon shot
+
+Options:
+- 🚀 Upgrade for unlimited scans
+- ⬅️ Go back to main menu
+- ⏰ Wait for daily reset
+
+Your choice - don't let FOMO control you!"""
+
+# =============================================================================
 # KEYBOARD BUILDERS
 # =============================================================================
 
@@ -379,17 +443,34 @@ def build_broadcast_keyboard(coin_data):
         ]
     ])
 
-def build_out_of_scans_keyboard(query):
-    """Build keyboard for out of scans message"""
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton(f"🚀 Analyze {query.upper()} Now!", callback_data="buy_starter")
-    ]])
+def build_out_of_scans_keyboard_with_back(query=None):
+    """Build keyboard for out of scans message WITH back button"""
+    buttons = []
+    
+    if query:
+        # If we know what they were searching for, offer to analyze it
+        buttons.append([InlineKeyboardButton(f"🚀 Analyze {query.upper()} Now!", callback_data="buy_starter")])
+    else:
+        # Generic upgrade button
+        buttons.append([InlineKeyboardButton("🚀 Go Premium Now!", callback_data="buy_starter")])
+    
+    # Add back/navigation options
+    buttons.append([
+        InlineKeyboardButton("⬅️ Back to Bot", callback_data="back_to_main"),
+        InlineKeyboardButton("📊 Check Balance", callback_data="check_balance")
+    ])
+    
+    return InlineKeyboardMarkup(buttons)
 
-def build_out_of_scans_back_keyboard():
-    """Build keyboard for out of scans back message"""
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🚀 Go Premium Now!", callback_data="buy_premium")
-    ]])
+def build_out_of_scans_back_keyboard_with_navigation():
+    """Build keyboard for out of scans back message WITH navigation"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚀 Go Premium Now!", callback_data="buy_premium")],
+        [
+            InlineKeyboardButton("⬅️ Back to Bot", callback_data="back_to_main"),
+            InlineKeyboardButton("🎯 Try Again Later", callback_data="show_rate_limit_info")
+        ]
+    ])
 
 # =============================================================================
 # HELP AND INFO MESSAGES
@@ -454,3 +535,34 @@ def get_help_message():
 • Optimized connection pooling
 
 📋 T&C's in pin @freecryptopings"""
+
+def build_out_of_scans_keyboard():
+    """Build keyboard for basic out of scans message"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚀 Go Premium Now!", callback_data="buy_starter")],
+        [InlineKeyboardButton("⬅️ Back to Bot", callback_data="back_to_main")]
+    ])
+
+def build_out_of_scans_back_keyboard():
+    """Build keyboard for out of scans back message"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚀 Go Premium Now!", callback_data="buy_premium")],
+        [InlineKeyboardButton("⬅️ Back to Bot", callback_data="back_to_main")]
+    ])
+
+def format_out_of_scans_message():
+    """Format basic out of scans message (no query parameter)"""
+    return """💔 Out of FOMO Scans!
+
+You've used all your free scans for today.
+
+🎯 Get More Scans:
+- Buy FCB tokens with premium packages
+- Get unlimited scans instantly!
+
+💡 Why upgrade?
+- No daily limits
+- Instant FOMO analysis
+- Premium features
+
+Don't miss the next moon shot! 🚀"""

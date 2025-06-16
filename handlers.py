@@ -30,8 +30,10 @@ from formatters import (
     format_fomo_message, format_treasure_discovery_message, format_balance_message,
     format_purchase_options_message, format_out_of_scans_message, 
     format_out_of_scans_back_message, format_payment_success_message,
+    format_out_of_scans_message_with_back, format_out_of_scans_back_message_with_navigation,
     build_addictive_buttons, build_purchase_keyboard, build_out_of_scans_keyboard,
-    build_out_of_scans_back_keyboard, create_countdown_visual,
+    build_out_of_scans_back_keyboard, build_out_of_scans_keyboard_with_back,
+    build_out_of_scans_back_keyboard_with_navigation, create_countdown_visual,
     get_start_message, get_help_message
 )
 from cache import get_ultra_fast_fomo_opportunities
@@ -624,17 +626,6 @@ async def handle_back_navigation(query, context, user_id):
     logging.info(f"🔍 BACK DEBUG: User {user_id} clicked back")
     
     try:
-        # Check if they have ANY scans available (just to prevent complete freeloaders)
-        fcb_balance, _, _, total_free_remaining, _ = get_user_balance(user_id)
-        has_any_scans = total_free_remaining > 0 or fcb_balance > 0
-        
-        if not has_any_scans:
-            # Only show upgrade if they have zero scans
-            message = format_out_of_scans_back_message()
-            keyboard = build_out_of_scans_back_keyboard()
-            await safe_edit_message(query, text=message, reply_markup=keyboard)
-            return
-        
         # FREE navigation feedback
         await safe_edit_message(query, text="⬅️ <b>Going back... (FREE navigation)</b>")
         
@@ -935,7 +926,7 @@ async def handle_next_navigation(query, context, user_id):
         
         if not has_scans:
             # Show upgrade message for new discoveries
-            message = format_out_of_scans_message()
+            message = format_out_of_scans_message("new coin")
             keyboard = build_out_of_scans_keyboard()
             await safe_edit_message(query, text=message, reply_markup=keyboard)
             return
@@ -1107,18 +1098,18 @@ async def send_coin_message_ultra_fast(update: Update, context: ContextTypes.DEF
     # Rate limit check
     allowed, time_remaining, reason = check_rate_limit_with_fcb(user_id)
     logging.info(f"🔍 DEBUG: Rate limit check - allowed: {allowed}, reason: '{reason}', time_remaining: {time_remaining}")
-    
+
     if not allowed:
         if reason == "No queries available":
-            logging.info(f"🔍 DEBUG: User {user_id} out of scans - attempting to send out of scans message")
+            logging.info(f"🔍 DEBUG: User {user_id} out of scans - sending out of scans message")
             try:
-                message = format_out_of_scans_message(query)
-                keyboard = build_out_of_scans_keyboard(query)
+                message = format_out_of_scans_message_with_back(query)
+                keyboard = build_out_of_scans_keyboard_with_back(query)
                 await update.message.reply_text(message, parse_mode='HTML', reply_markup=keyboard)
-                logging.info(f"✅ DEBUG: Out of scans message sent successfully to user {user_id}")
+                logging.info(f"✅ DEBUG: Enhanced out of scans message sent to user {user_id}")
                 return
             except Exception as e:
-                logging.error(f"❌ DEBUG: Failed to send out of scans message to user {user_id}: {e}")
+                logging.error(f"❌ DEBUG: Failed to send enhanced message: {e}")
                 # Emergency fallback message
                 try:
                     fallback_message = f"""💔 <b>Out of FOMO Scans!</b>
@@ -1129,14 +1120,14 @@ You've used all your free scans for today.
 - Buy FCB tokens with /buy
 - Get unlimited scans instantly!
 
-💡 <b>Why FCB tokens?</b>
-- No daily limits
-- Instant FOMO analysis
-- Premium features
-
 Type /buy to get started! 🚀"""
                     
-                    await update.message.reply_text(fallback_message, parse_mode='HTML')
+                    fallback_keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("⭐ Buy Tokens", callback_data="buy_starter")],
+                        [InlineKeyboardButton("⬅️ Back to Menu", callback_data="back_to_main")]
+                    ])
+                    
+                    await update.message.reply_text(fallback_message, parse_mode='HTML', reply_markup=fallback_keyboard)
                     logging.info(f"✅ DEBUG: Fallback message sent to user {user_id}")
                 except Exception as fallback_error:
                     logging.error(f"❌ DEBUG: Even fallback message failed: {fallback_error}")
@@ -1144,7 +1135,10 @@ Type /buy to get started! 🚀"""
             logging.info(f"🔍 DEBUG: User {user_id} rate limited - sending countdown message")
             try:
                 countdown_msg = create_countdown_visual(time_remaining)
-                await update.message.reply_text(countdown_msg, parse_mode='HTML')
+                countdown_keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⬅️ Back to Menu", callback_data="back_to_main")]
+                ])
+                await update.message.reply_text(countdown_msg, parse_mode='HTML', reply_markup=countdown_keyboard)
                 logging.info(f"✅ DEBUG: Countdown message sent to user {user_id}")
             except Exception as e:
                 logging.error(f"❌ DEBUG: Failed to send countdown message: {e}")
@@ -1245,23 +1239,133 @@ Type /buy to get started! 🚀"""
             await update.message.reply_text('❌ Error processing request. Please try again.')
 
 # =============================================================================
+# ENHANCED NAVIGATION HANDLERS
+# =============================================================================
+
+async def handle_back_to_main(query, context, user_id):
+    """Handle back to main menu action"""
+    
+    # Get user's current balance for a helpful main menu
+    fcb_balance, free_queries_used, new_user_bonus_used, total_free_remaining, has_received_bonus = get_user_balance(user_id)
+    
+    # Check if user has any coin history for the BACK button (they always should if they're here)
+    session = get_user_session(user_id)
+    # Note: Users only reach this main menu after using scans, so they should always have history
+    
+    main_menu_msg = f"""👋 Welcome back to FOMO Crypto Bot!
+
+📊 Your Status:
+🎯 FOMO Scans: {total_free_remaining} remaining
+💎 FCB Tokens: {fcb_balance}
+
+✨ What would you like to do?
+
+💡 Quick Actions:
+- Type any coin name (like "bitcoin", "pepe") to analyze
+- Use /balance to check your scans
+- Use /buy to get more FCB tokens
+
+📺 Follow our alerts: https://t.me/fomocryptobot_alert
+
+Ready to find the next moon shot? 🚀"""
+
+    # Create simple keyboard - always show BACK since users only reach main menu after using scans
+    keyboard_buttons = []
+    
+    # First row - navigation buttons
+    keyboard_buttons.append([
+        InlineKeyboardButton("⬅️ BACK", callback_data="back_navigation"),
+        InlineKeyboardButton("📊 My Balance", callback_data="check_balance")
+    ])
+    
+    # Second row - purchase and help
+    keyboard_buttons.append([
+        InlineKeyboardButton("⭐ Buy Tokens", callback_data="buy_starter"),
+        InlineKeyboardButton("❓ Help", callback_data="show_help")
+    ])
+    
+    keyboard = InlineKeyboardMarkup(keyboard_buttons)
+    
+    await safe_edit_message(query, text=main_menu_msg, reply_markup=keyboard)
+
+async def handle_rate_limit_info(query, context, user_id):
+    """Show rate limit information and alternatives"""
+    
+    fcb_balance, free_queries_used, new_user_bonus_used, total_free_remaining, has_received_bonus = get_user_balance(user_id)
+    
+    info_msg = f"""⏰ Rate Limit Information
+
+📊 Your Current Status:
+🎯 FOMO Scans: {total_free_remaining} remaining
+💎 FCB Tokens: {fcb_balance}
+
+🕒 How it works:
+- Free users: 1 second between queries
+- This protects our API costs
+- Premium users: No rate limits
+
+⏰ When do scans reset?
+- Daily scans: Reset at midnight UTC
+- New user bonus: One-time only
+- FCB tokens: Never expire
+
+💡 Alternatives while you wait:
+- Check our channel for latest alerts
+- Plan your next analysis
+- Consider upgrading for instant access"""
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📺 View Channel", url="https://t.me/fomocryptobot_alert")],
+        [
+            InlineKeyboardButton("⭐ Go Premium", callback_data="buy_starter"),
+            InlineKeyboardButton("⬅️ Back", callback_data="back_to_main")
+        ]
+    ])
+    
+    await safe_edit_message(query, text=info_msg, reply_markup=keyboard)
+
+async def handle_show_help(query, context, user_id):
+    """Show help information"""
+    
+    help_msg = get_help_message()
+    
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ Back to Menu", callback_data="back_to_main")]
+    ])
+    
+    await safe_edit_message(query, text=help_msg, reply_markup=keyboard)
+
+# =============================================================================
 # CALLBACK HANDLERS
 # =============================================================================
 
 async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle all callback queries (buttons) with instant gratification"""
+    """Enhanced callback handler with back button support"""
     query = update.callback_query
     await query.answer()
     
     user_id = query.from_user.id
     
+    # Handle new back navigation options
+    if query.data == "back_to_main":
+        await handle_back_to_main(query, context, user_id)
+        return
+    
+    elif query.data == "show_rate_limit_info":
+        await handle_rate_limit_info(query, context, user_id)
+        return
+    
+    elif query.data == "show_help":
+        await handle_show_help(query, context, user_id)
+        return
+    
     # Handle purchase buttons FIRST (no rate limiting needed)
-    if query.data.startswith("buy_"):
+    elif query.data.startswith("buy_"):
         await handle_star_purchase(update, context)
         return
     
     # Handle Back button with instant response  
-    if query.data.startswith("back_"):
+    elif query.data.startswith("back_"):
         await handle_back_navigation(query, context, user_id)
         return
     
@@ -1272,9 +1376,20 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
         message = f"""📊 <b>Balance Update</b>
         
 🎯 FOMO Scans: <b>{total_free_remaining} remaining</b>
-💎 FCB Tokens: <b>{fcb_balance}</b>"""
+💎 FCB Tokens: <b>{fcb_balance}</b>
+
+💡 <b>Need more scans?</b>
+- Daily scans reset at midnight
+- Buy FCB tokens for unlimited access
+- Premium users never run out!"""
         
-        await safe_edit_message(query, text=message)
+        # Add helpful keyboard
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⭐ Buy More Scans", callback_data="buy_starter")],
+            [InlineKeyboardButton("⬅️ Back", callback_data="back_to_main")]
+        ])
+        
+        await safe_edit_message(query, text=message, reply_markup=keyboard)
         return
     
     # Check if user has queries available
@@ -1282,12 +1397,16 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
     
     if not allowed:
         if reason == "No queries available":
-            message = format_out_of_scans_back_message()
-            keyboard = build_out_of_scans_back_keyboard()
+            message = format_out_of_scans_back_message_with_navigation()
+            keyboard = build_out_of_scans_back_keyboard_with_navigation()
             await safe_edit_message(query, text=message, reply_markup=keyboard)
         else:
             countdown_msg = create_countdown_visual(time_remaining)
-            await safe_edit_message(query, text=countdown_msg)
+            # Add back button to countdown too
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Back to Bot", callback_data="back_to_main")]
+            ])
+            await safe_edit_message(query, text=countdown_msg, reply_markup=keyboard)
         return
     
     # Handle Next/Spin button with instant response
