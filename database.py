@@ -17,7 +17,7 @@ NEW_USER_BONUS = 3
 user_last_request = {}
 
 # ✅ FIXED: Use environment variable for database path with fallback
-DATABASE_PATH = os.getenv('DATABASE_PATH', '/opt/render/project/fcb_users.db')
+DATABASE_PATH = os.getenv('DATABASE_PATH', '/tmp/fcb_users.db')
 
 # ✅ Ensure database directory exists
 try:

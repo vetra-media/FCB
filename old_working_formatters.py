@@ -1,7 +1,7 @@
 """
 Message formatting module for CFB (Crypto FOMO Bot) - ULTRA-CLEAN UI VERSION - FINAL - PART 1/2
 Handles all message formatting, keyboards, and visual elements with mass-market friendly interface
-FINAL FIX: Updated "unlimited" messaging to accurate "premium packages" and "250+ scans"
+FINAL FIX: Removed discovery text and updated for clean user experience
 """
 
 import pytz
@@ -35,10 +35,10 @@ def short_stat(value, decimals=2, prefix='$'):
         return "?"
 
 def get_simple_timestamp():
-    """Get simple timestamp with UTC"""
-    tz = pytz.timezone("UTC")
+    """Get simple timestamp with just UTC+5:30"""
+    tz = pytz.timezone("Asia/Kolkata")
     now = datetime.now(tz)
-    return f"{now.strftime('%Y-%m-%d %H:%M')} (UTC)"
+    return f"{now.strftime('%Y-%m-%d %H:%M')} (UTC+5:30)"
 
 def parse_exchange_info(distribution_status):
     """Extract exchange count and top exchange percentage from distribution status"""
@@ -208,11 +208,11 @@ def format_complex_message(coin, fomo_score, signal_type, volume_spike, trend_st
     return "\n".join(message_parts)
 
 # =============================================================================
-# BALANCE AND PURCHASE MESSAGE FORMATTERS (FIXED: NO MORE "UNLIMITED")
+# BALANCE AND PURCHASE MESSAGE FORMATTERS (SIMPLIFIED)
 # =============================================================================
 
 def format_balance_message(user_balance_info, conversion_hooks=True):
-    """FIXED: Simplified balance message - no more "unlimited" promises"""
+    """Simplified balance message"""
     fcb_balance = user_balance_info.get('fcb_balance', 0)
     total_free_remaining = user_balance_info.get('total_free_remaining', 0)
     
@@ -221,16 +221,16 @@ def format_balance_message(user_balance_info, conversion_hooks=True):
 🎯 <b>Scans Available:</b> {total_free_remaining}
 💎 <b>FCB Tokens:</b> {fcb_balance}"""
     
-    # Add conversion hooks based on usage - FIXED messaging
+    # Add conversion hooks based on usage
     if conversion_hooks:
         if total_free_remaining <= 2:
             message += f"""
 
 🚨 <b>Almost Out of Scans!</b>
-Get premium scanning with FCB tokens.
+Get unlimited scanning with FCB tokens.
 
 💎 <b>Premium Benefits:</b>
-- 250+ scans per package
+- Unlimited opportunities
 - No daily limits
 - Professional insights
 
@@ -240,7 +240,7 @@ Need more? Use /buy"""
 
 💡 <b>How it works:</b>
 - Free scans reset daily
-- Premium: 250+ scans with FCB tokens
+- Premium: Unlimited with FCB tokens
 - Same algorithm as our successful alerts
 
 Need more? Use /buy"""
@@ -248,11 +248,11 @@ Need more? Use /buy"""
     return message
 
 def format_purchase_options_message(user_balance_info):
-    """FIXED: Simplified purchase options message - accurate premium packages"""
+    """Simplified purchase options message"""
     fcb_balance = user_balance_info.get('fcb_balance', 0)
     total_free_remaining = user_balance_info.get('total_free_remaining', 0)
     
-    message = f"""⭐ <b>Get Premium Scan Packages!</b>
+    message = f"""⭐ <b>Get Unlimited Opportunities!</b>
 
 <b>Your Status:</b>
 🎯 Scans Available: <b>{total_free_remaining}</b>
@@ -272,7 +272,7 @@ def format_purchase_options_message(user_balance_info):
 3. Get FCB tokens immediately!
 
 <b>🚀 Why upgrade?</b>
-- Premium scan packages
+- Unlimited opportunities
 - Professional insights
 - Never miss out again
 
@@ -282,7 +282,7 @@ def format_purchase_options_message(user_balance_info):
 
 def format_out_of_scans_message(query=None):
     """
-    FIXED: Simplified out of scans message - accurate premium messaging
+    FIXED: Simplified out of scans message that works with handlers.py
     Added optional query parameter for compatibility
     """
     if query:
@@ -296,7 +296,7 @@ What if {query} is about to 🚀 and you're missing it?
 💎 <b>Premium users would see:</b>
 - Real-time opportunity score for {query}
 - Professional insights
-- Premium scanning access
+- Unlimited scanning
 
 🚨 <b>Don't miss the next big opportunity!</b>
 
@@ -309,7 +309,7 @@ You've used all your free scans for today.
 
 🎯 <b>Get More Scans:</b>
 - Buy FCB tokens with premium packages
-- Get premium scanning instantly!
+- Get unlimited scanning instantly!
 
 💡 <b>Why upgrade?</b>
 - No daily limits
@@ -321,7 +321,7 @@ Don't miss the next big opportunity! 🚀"""
     return message
 
 def format_out_of_scans_back_message():
-    """FIXED: Simplified back message for out of scans - accurate messaging"""
+    """Simplified back message for out of scans"""
     message = """💔 <b>Out of Scans!</b>
 
 You wanted fresh data but you're out of scans.
@@ -334,18 +334,18 @@ While you wait, the next big opportunity might slip away...
 - Fresh opportunities
 - Professional insights
 
-Get premium scan packages with FCB tokens!"""
+Get unlimited scans with FCB tokens!"""
 
     return message
 
 def format_payment_success_message(tokens, stars):
-    """FIXED: Simplified payment success message - accurate premium access"""
+    """Simplified payment success message"""
     message = f"""✅ <b>Payment Successful!</b>
 
 🎫 <b>{tokens} FCB tokens</b> added to your account!
 ⭐ Stars spent: <b>{stars}</b>
 
-You now have premium scanning access!
+You now have unlimited opportunity scanning!
 Just type any coin name to get started.
 
 Thank you for supporting FOMO Crypto Bot! 🚀"""
@@ -353,21 +353,21 @@ Thank you for supporting FOMO Crypto Bot! 🚀"""
     return message
 
 # =============================================================================
-# END OF PART 1/2 - "UNLIMITED" MESSAGING FIXED
+# END OF PART 1/2
 # =============================================================================
 
 """
 Message formatting module for CFB (Crypto FOMO Bot) - ULTRA-CLEAN UI VERSION - FINAL - PART 2/2
 Handles enhanced messages, keyboards, and backward compatibility
-FINAL FIX: Updated "unlimited" messaging to accurate "premium packages" and "250+ scans"
+FINAL FIX: Updated keyboard builders and complete message formatters
 """
 
 # =============================================================================
-# ENHANCED MESSAGE FORMATTERS WITH BACK BUTTON SUPPORT (FIXED)
+# ENHANCED MESSAGE FORMATTERS WITH BACK BUTTON SUPPORT (SIMPLIFIED)
 # =============================================================================
 
 def format_out_of_scans_message_with_back(query=None):
-    """FIXED: Simplified out of scans message with back button - accurate premium messaging"""
+    """Simplified out of scans message with back button"""
     if query:
         message = f"""💔 <b>Scan Limit Reached!</b>
 
@@ -379,7 +379,7 @@ What if {query} is about to 🚀 and you're missing it?
 💎 <b>Premium users would see:</b>
 - Real-time opportunity score for {query}
 - Professional analysis
-- Premium scanning access
+- Unlimited scanning
 
 🚨 <b>Don't miss the next big opportunity!</b>
 
@@ -393,7 +393,7 @@ You've used all your free scans for today.
 
 🎯 <b>Get More Scans:</b>
 - Buy FCB tokens with premium packages
-- Get premium scanning instantly!
+- Get unlimited scanning instantly!
 
 💡 <b>Why upgrade?</b>
 - No daily limits
@@ -405,7 +405,7 @@ Or go back to explore other features..."""
     return message
 
 def format_out_of_scans_back_message_with_navigation():
-    """FIXED: Simplified back message with navigation options - accurate messaging"""
+    """Simplified back message with navigation options"""
     return """💔 <b>Out of Scans!</b>
 
 You wanted fresh data but you're out of scans.
@@ -419,18 +419,18 @@ While you wait, the next big opportunity might slip away...
 - Professional insights
 
 Options:
-- 🚀 Upgrade for premium scan packages
+- 🚀 Upgrade for unlimited scans
 - ⬅️ Go back to main menu
 - ⏰ Wait for daily reset
 
 Your choice - don't let opportunities slip away!"""
 
 # =============================================================================
-# UPDATED KEYBOARD BUILDERS (🤖 TOP UP INSTEAD OF ⭐ TOP UP)
+# UPDATED KEYBOARD BUILDERS (👉 NEXT INSTEAD OF 🎰)
 # =============================================================================
 
 def build_addictive_buttons(coin, user_balance_info=None):
-    """Create buttons with updated symbols - 🤖 TOP UP for consistent theming"""
+    """Create buttons with updated symbols - 👉 NEXT instead of 🎰"""
     # If no balance info provided, just show buttons without balance text
     balance_text = ""
     
@@ -454,11 +454,11 @@ def build_addictive_buttons(coin, user_balance_info=None):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(f'⬅️ BACK{balance_text}', callback_data=back_callback),
-            InlineKeyboardButton(f'👉 NEXT{balance_text}', callback_data=next_callback)
+            InlineKeyboardButton(f'👉 NEXT{balance_text}', callback_data=next_callback)  # UPDATED: 👉 instead of 🎰
         ],
         [
             InlineKeyboardButton('💰 BUY COIN', url=buy_coin_url),
-            InlineKeyboardButton('🤖 TOP UP', callback_data='buy_starter')  # UPDATED: 🤖 instead of ⭐
+            InlineKeyboardButton('⭐ TOP UP', callback_data='buy_starter')
         ]
     ])
 
@@ -480,11 +480,11 @@ def build_broadcast_keyboard(coin_data):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton('⬅️ BACK', callback_data=f"back_{coin_data.get('id', coin_data.get('coin', 'unknown'))}"),
-            InlineKeyboardButton('👉 NEXT', callback_data="next_coin")
+            InlineKeyboardButton('👉 NEXT', callback_data="next_coin")  # UPDATED: 👉 instead of 🎰
         ],
         [
             InlineKeyboardButton('💰 BUY COIN', url=buy_coin_url),
-            InlineKeyboardButton('🤖 TOP UP', callback_data='buy_starter')  # UPDATED: 🤖 instead of ⭐
+            InlineKeyboardButton('⭐ TOP UP', callback_data='buy_starter')
         ]
     ])
 
@@ -532,11 +532,11 @@ def build_out_of_scans_back_keyboard():
     ])
 
 # =============================================================================
-# SIMPLIFIED HELP AND INFO MESSAGES (FIXED)
+# SIMPLIFIED HELP AND INFO MESSAGES
 # =============================================================================
 
 def get_start_message():
-    """FIXED: Simplified welcome/start message - accurate premium messaging"""
+    """Simplified welcome/start message"""
     return """👋 Welcome to <b>FOMO Crypto Bot</b>!
 
 🔥 <b>What I do:</b>
@@ -548,7 +548,7 @@ def get_start_message():
 • Type any coin name (like <code>btc</code>, <code>pepe</code>, <code>solana</code>)
 • Get instant opportunity analysis
 • Free users: Get 8 FREE scans to start!
-• Premium users: 250+ scans with FCB tokens
+• Premium users: Unlimited with FCB tokens
 
 🎯 <b>FOMO Score = Opportunity Level</b>
 90%+ = 🚀 Very high probability
@@ -558,7 +558,7 @@ def get_start_message():
 <i>Professional insights made simple!</i>"""
 
 def get_help_message():
-    """FIXED: Simplified help message - accurate premium messaging"""
+    """Simplified help message"""
     return """🎯 <b>FOMO Crypto Bot Help</b>
 
 <b>🚨 Automated Alerts:</b>
@@ -579,7 +579,7 @@ def get_help_message():
 
 <b>💎 Premium Benefits:</b>
 • Free: 8 scans to start (3 bonus + 5 daily)
-• Premium: 250+ scans with FCB tokens
+• Premium: Unlimited scans with FCB tokens
 • Instant ⬅️ Back and 👉 Next buttons"""
 
 # =============================================================================
@@ -600,14 +600,12 @@ def format_fomo_message_legacy(coin, fomo_score, signal_type, volume_spike, tren
 # =============================================================================
 
 """
-FINAL ULTRA-CLEAN formatters.py ASSEMBLY WITH "UNLIMITED" MESSAGING FIXED:
+FINAL ULTRA-CLEAN formatters.py ASSEMBLY:
 
 ✅ **COMPLETED FEATURES:**
 - Mass-market friendly message formatting
 - Removed discovery text completely from format_treasure_discovery_message()
 - Updated all keyboard builders to use 👉 NEXT instead of 🎰
-- Updated TOP UP button from ⭐ to 🤖 for consistent theming
-- FIXED: All "unlimited" messaging replaced with accurate premium packages
 - Simplified all message formatters for clean user experience
 - Preserved all original functionality while hiding complexity
 - Compatible with handlers.py ultra-clean implementation
@@ -615,27 +613,12 @@ FINAL ULTRA-CLEAN formatters.py ASSEMBLY WITH "UNLIMITED" MESSAGING FIXED:
 ✅ **KEY FINAL UPDATES:**
 - format_treasure_discovery_message() no longer includes "👉 Tap NEXT to discover more opportunities!"
 - All keyboards use 👉 NEXT symbol for clean, professional appearance
-- All keyboards use 🤖 TOP UP for consistent theming with "🤖 Tokens: X" format
 - All message formatters use simplified, mass-market friendly language
-- FIXED: "unlimited" → "premium packages", "250+ scans", "premium access"
 - Preserved backward compatibility with legacy functions
 
-🎯 **MESSAGING FIXES COMPLETED:**
-- "Get unlimited scanning with FCB tokens" → "Get premium scanning with FCB tokens"
-- "Unlimited opportunities" → "Premium opportunities"
-- "unlimited scanning" → "premium scanning"
-- "You now have unlimited opportunity scanning!" → "You now have premium scanning access!"
-- "Upgrade for unlimited scans" → "Upgrade for premium scan packages"
-- "Premium: Unlimited with FCB tokens" → "Premium: 250+ scans with FCB tokens"
-
-✅ **PERFECT ACCURACY:**
-- All messaging now reflects actual token packages (100, 250, 500, 1000)
-- No false "unlimited" promises
-- Professional premium positioning
-- Clear value proposition with honest benefits
-
-✅ **FINAL RESULT:**
-Clean, professional message formatting with accurate premium messaging:
+🎯 **FINAL RESULT:**
+Clean, professional message formatting that works perfectly with the 
+ultra-clean handlers.py to deliver a mass-market friendly experience:
 
 ```
 🚀 Cudis (CUDIS)
@@ -643,27 +626,17 @@ Clean, professional message formatting with accurate premium messaging:
 FOMO: 67%
 📈 Good opportunity
 
-Buttons: [⬅️ BACK] [👉 NEXT]
-         [💰 BUY COIN] [🤖 TOP UP]
-
 🤖 Tokens: 140
 ```
-
-✅ **PERFECT ACCURACY & CONSISTENCY:**
-- Balance display: "🤖 Tokens: X"
-- TOP UP button: "🤖 TOP UP"
-- Premium messaging: "250+ scans", "premium packages"
-- No more "unlimited" false promises
 
 ✅ **COMPATIBILITY:** 100% compatible with handlers.py
 ✅ **USER EXPERIENCE:** Clean, simple, mass-market friendly
 ✅ **FUNCTIONALITY:** All original features preserved
-✅ **HONESTY:** Accurate premium messaging, no false claims
-✅ **FINAL POLISH:** Perfect accuracy and professional positioning
+✅ **VISUAL DESIGN:** Professional, no gambling references
 
-Ready for mainstream adoption with honest, professional messaging!
+Perfect for mainstream adoption!
 """
 
 # =============================================================================
-# END OF PART 2/2 - "UNLIMITED" MESSAGING FIXED - FORMATTERS COMPLETE
+# END OF PART 2/2 - ULTRA-CLEAN FORMATTERS COMPLETE WITH FINAL FIXES
 # =============================================================================

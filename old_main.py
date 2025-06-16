@@ -44,7 +44,7 @@ from cache import init_ultra_fast_cache
 print("cache imported")
 
 print("Importing scanner...")
-from scanner import periodic_fomo_scan, send_weekly_winners_update
+from scanner import periodic_fomo_scan
 print("scanner imported")
 
 print("Importing handlers...")
@@ -166,24 +166,14 @@ async def start_background_tasks(app):
         await asyncio.sleep(1)
         print("After cache delay")
         
-        # Start scheduled FOMO broadcasts every 4 hours with weekly winners
+        # Start scheduled FOMO broadcasts (6am, 2pm, 10pm IST) - ONLY ONCE
         print("About to start scheduled FOMO alerts...")
-        logger.info("🕒 Setting up scheduled FOMO alerts (every 4 hours)...")
+        logger.info("🕒 Setting up scheduled FOMO alerts...")
         scheduler = AsyncIOScheduler(timezone=timezone("Asia/Kolkata"))
-        
-        # FOMO alerts every 4 hours (6 per day max)
         scheduler.add_job(
             periodic_fomo_scan,
-            'interval',
-            hours=4,
-            args=[app.bot]
-        )
-        
-        # Weekly winners update daily at 10 AM IST
-        scheduler.add_job(
-            send_weekly_winners_update,
-            'cron',
-            hour=10,
+            'cron', 
+            hour='6,14,22',
             args=[app.bot]
         )
         
