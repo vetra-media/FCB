@@ -2687,6 +2687,11 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
     if query.data == "back_to_main":
         await handle_back_to_main(query, context, user_id)
         return
+
+    elif query.data == "start_scan":
+        # Handle the "Start Scanning" button from welcome screen
+        await handle_instant_discovery(query, context, user_id, force_new=True)
+        return
     
     elif query.data == "show_rate_limit_info":
         await handle_rate_limit_info(query, context, user_id)
