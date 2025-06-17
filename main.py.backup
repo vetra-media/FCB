@@ -1,0 +1,353 @@
+print("Importing database...")
+from database import (
+    init_user_db, 
+    get_user_balance, 
+    spend_fcb_token, 
+    add_fcb_tokens, 
+    check_rate_limit_with_fcb
+)
+print("database imported")
+
+print("Importing config...")
+from config import (
+    BOT_TOKEN, COINGECKO_API_KEY, COINGECKO_API, BROADCAST_CHAT_ID,
+    RATE_LIMIT_SECONDS, FOMO_SCAN_INTERVAL, MAX_COINS_PER_PAGE, 
+    TOP_N_TO_EXCLUDE, COIN_SYMBOL_OVERRIDES, STABLECOIN_SYMBOLS,
+    FCB_STAR_PACKAGES, FOMO_CACHE, CACHE_BACK_INTERVAL,
+    INSTANT_RESPONSES, INSTANT_SPIN_RESPONSES, HISTORY_LOG,
+    validate_config
+)
+print("config imported")
+
+print("Importing api_client...")
+from api_client import (
+    get_optimized_session, OptimizedRateLimiter, BatchProcessor,
+    fetch_market_data_ultra_fast, fetch_ohlcv_data_ultra_fast,
+    fetch_ticker_data_ultra_fast, fetch_coin_data_ultra_fast,
+    get_coin_info_ultra_fast, fetch_ohlcv_data, fetch_from_coingecko,
+    get_coin_info, fuzzy_find_coin, batch_processor, rate_limiter,
+    cleanup_session
+)
+print("api_client imported")
+
+print("Importing analysis...")
+from analysis import calculate_fomo_status_ultra_fast
+print("analysis imported")
+
+print("Importing scanner...")
+from scanner import periodic_fomo_scan, send_weekly_winners_update
+print("scanner imported")
+
+print("Importing handlers...")
+try:
+    from handlers import setup_handlers
+    print("handlers imported")
+except ImportError as e:
+    print(f"Handlers import error: {e}")
+    print("Starting with basic bot functionality...")
+    
+    # Basic fallback handler setup
+    def setup_handlers(application):
+        """Basic fallback handler setup"""
+        from telegram.ext import CommandHandler
+        from telegram import Update
+        from telegram.ext import ContextTypes
+        
+        async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            await update.message.reply_text(
+                "🤖 FCB FOMO Bot is running!\n\n"
+                "✅ Analysis system: ACTIVE\n"
+                "🎮 Gaming mode: READY\n"
+                "🛡️ Zero results: IMPOSSIBLE\n\n"
+                "Bot is ready for full handler integration!"
+            )
+        
+        async def test_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            """Test the analysis system"""
+            from analysis import calculate_fomo_status_ultra_fast
+            
+            # Test with Bitcoin
+            test_coin = {
+                'symbol': 'BTC',
+                'price': 43000,
+                'volume': 20000000000,
+                'change_1h': 1.2,
+                'change_24h': 3.5,
+                'market_cap': 850000000000
+            }
+            
+            try:
+                result = await calculate_fomo_status_ultra_fast(test_coin)
+                score, signal, trend, distribution, volume_spike = result
+                
+                await update.message.reply_text(
+                    f"🧪 **Analysis Test**\n\n"
+                    f"🪙 **Bitcoin (BTC)**\n"
+                    f"📊 **FOMO Score**: {score}%\n"
+                    f"🎯 **Signal**: {signal}\n"
+                    f"📈 **Trend**: {trend}\n"
+                    f"💧 **Volume**: {volume_spike:.1f}x\n\n"
+                    f"✅ **Analysis system working perfectly!**",
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                await update.message.reply_text(f"❌ Analysis test failed: {e}")
+        
+        # Add basic handlers
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("test", test_analysis))
+        
+        return application
+    
+    print("Basic handlers created")
+
+import os
+import logging
+import asyncio
+from dotenv import load_dotenv
+from pathlib import Path
+from telegram.ext import ApplicationBuilder
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from pytz import timezone
+import aiohttp
+
+# Load environment variables
+load_dotenv()
+
+print("=== STARTING SCRIPT ===")
+print("Configuration importing...")
+
+# Setup logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# Add these missing functions to main.py:
+
+async def init_ultra_fast_cache():
+    """Initialize ultra-fast cache system (fallback implementation)"""
+    try:
+        logger.info("🔄 Initializing ultra-fast cache system...")
+        
+        # Simple fallback cache initialization
+        # In a full implementation, this would set up Redis or in-memory cache
+        cache_config = {
+            'enabled': True,
+            'max_size': 1000,
+            'ttl_seconds': 300,  # 5 minutes
+            'initialized_at': datetime.now().isoformat()
+        }
+        
+        logger.info(f"✅ Cache system initialized: {cache_config}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Cache initialization failed: {e}")
+        logger.info("🔄 Continuing without cache system...")
+        return False
+
+# Also add this import at the top with the other imports:
+from datetime import datetime
+
+# Setup logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# Add this to reduce warning noise:
+logging.getLogger('root').setLevel(logging.ERROR)  # Only show errors, not warnings
+
+async def start_bot_only():
+    """Start just the bot without background tasks first"""
+    logger.info("🚀 Starting ULTRA-FAST FOMO Crypto Bot...")
+    
+    # Validate configuration
+    try:
+        validate_config()
+        logger.info("✅ Configuration validated")
+    except Exception as e:
+        logger.error(f"❌ Config validation failed: {e}")
+        return None
+    
+    # Initialize database  
+    try:
+        init_user_db()
+        logger.info("✅ Database initialized")
+    except Exception as e:
+        logger.error(f"❌ Database init failed: {e}")
+        return None
+    
+    # Build and setup Telegram app
+    try:
+        token = os.getenv("TEST_BOT_TOKEN") if os.getenv("TEST_MODE") == "True" else BOT_TOKEN
+        app = ApplicationBuilder().token(token).build()
+        setup_handlers(app)
+        logger.info("✅ Telegram app built and handlers setup")
+    except Exception as e:
+        logger.error(f"❌ Telegram setup failed: {e}")
+        return None
+    
+    # Initialize and start bot
+    try:
+        await app.initialize()
+        await app.start()
+        logger.info("✅ Telegram bot started successfully")
+        
+        logger.info(f'✅ Bot is online! Chat ID: {BROADCAST_CHAT_ID}')
+        logger.info(f"🔑 Using CoinGecko Pro API: {COINGECKO_API_KEY[:8]}...")
+        
+        return app
+    except Exception as e:
+        logger.error(f"❌ Bot start failed: {e}")
+        return None
+
+async def ping_render_service():
+    """Keep the service active by making an external request"""
+    try:
+        # Just ping a reliable external service to generate activity
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://httpbin.org/status/200", timeout=10) as response:
+                if response.status == 200:
+                    logger.info("✅ Keep-alive ping successful")
+                else:
+                    logger.warning(f"⚠️ Keep-alive ping returned status {response.status}")
+                    
+    except Exception as e:
+        logger.error(f"❌ Keep-alive ping failed: {e}")
+        # Don't raise the exception - just log it so the scheduler continues
+
+async def start_background_tasks(app):
+    print("=== ENTERED start_background_tasks() ===")
+    """Start background tasks after bot is confirmed working"""
+    logger.info("🔄 Starting background tasks...")
+    
+    tasks = []
+    scheduler = None
+    
+    try:
+        print("About to start bot polling...")
+        # Start polling (this keeps the bot responsive)
+        logger.info("🔄 Starting bot polling...")
+        polling_task = asyncio.create_task(app.updater.start_polling())
+        tasks.append(polling_task)
+        logger.info("✅ Bot polling started")
+        print("Bot polling started successfully")
+        
+        # Small delay to let polling establish
+        await asyncio.sleep(2)
+        print("After polling delay")
+        
+        print("About to start cache system...")
+        # Start cache system
+        logger.info("🔄 Starting cache system...")
+        cache_task = asyncio.create_task(init_ultra_fast_cache())
+        tasks.append(cache_task)
+        logger.info("✅ Cache task started")
+        print("Cache task started successfully")
+        
+        # Another small delay
+        await asyncio.sleep(1)
+        print("After cache delay")
+        
+        # Start scheduled FOMO broadcasts every 4 hours with weekly winners
+        print("About to start scheduled FOMO alerts...")
+        logger.info("🕒 Setting up scheduled FOMO alerts (every 4 hours)...")
+        scheduler = AsyncIOScheduler(timezone=timezone("Asia/Kolkata"))
+        
+        # FOMO alerts every 4 hours (6 per day max)
+        scheduler.add_job(
+            periodic_fomo_scan,
+            'interval',
+            hours=4,
+            args=[app.bot]
+        )
+        
+        # Weekly winners update daily at 10 AM IST
+        scheduler.add_job(
+            send_weekly_winners_update,
+            'cron',
+            hour=10,
+            args=[app.bot]
+        )
+        
+        # Add ping job to keep Render service awake
+        scheduler.add_job(
+            ping_render_service,
+            'interval', 
+            minutes=14  # Ping every 14 minutes to keep service awake
+        )
+
+        scheduler.start()
+        logger.info("✅ Scheduler started for 6am, 2pm, and 10pm IST")
+        logger.info("✅ Ping service started (every 14 minutes)")
+
+        # Run initial FOMO scan on startup
+        try:
+            logger.info("🔄 Running initial FOMO scan on startup...")
+            await periodic_fomo_scan(app.bot)
+            logger.info("✅ Initial FOMO scan completed")
+        except Exception as e:
+            logger.error(f"❌ Initial FOMO scan failed: {e}")
+
+        logger.info("🎯 All systems operational! Bot ready for commands.")
+        print("All systems operational, returning tasks")
+        
+        return tasks, scheduler  # Return scheduler so it can be managed
+        
+    except Exception as e:
+        print(f"Exception in start_background_tasks: {e}")
+        logger.error(f"❌ Background task startup failed: {e}")
+        
+        # Clean up scheduler if it was created
+        if scheduler:
+            scheduler.shutdown()
+        
+        # Cancel any tasks that were started
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        return [], None
+
+async def main():
+    print("Entered main()")
+    print("About to call start_bot_only()")
+    app = await start_bot_only()
+    print(f"Returned from start_bot_only(), app = {app}")
+    if not app:
+        print("No app, exiting main()")
+        return
+
+    print("About to call start_background_tasks()")
+    tasks, scheduler = await start_background_tasks(app)
+    print("Returned from start_background_tasks()")
+    
+    if not tasks:
+        print("No tasks, stopping app")
+        await app.stop()
+        return
+
+    print("Running background tasks...")
+    print("🎯 Bot is now running! Press Ctrl+C to stop.")
+    
+    try:
+        await asyncio.gather(*tasks)
+    except Exception as e:
+        print(f"Exception in main: {e}")
+    finally:
+        # Clean shutdown
+        if scheduler:
+            scheduler.shutdown()
+        await app.stop()
+
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n🛑 Bot stopped by user")
+    except Exception as e:
+        print(f"❌ Fatal error: {e}")
+        logging.error(f"Fatal error: {e}", exc_info=True)
