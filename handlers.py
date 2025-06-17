@@ -1,12 +1,12 @@
 """
-Telegram handlers module for CFB (Crypto FOMO Bot) - TEXT CONSISTENCY FIXED VERSION
+Telegram handlers module for CFB (Crypto FOMO Bot) - CAMPAIGN TRACKING INTEGRATED
 PART 1/8: Core Setup, Imports, Session Management, and Utilities
 
-TEXT FIXES APPLIED:
-- ✅ Contact changed from @freecryptopings to @fomocryptopings
-- ✅ Timezone standardized to UTC
-- ✅ "Fresh Spin" corrected to "Fresh scan"
-- ✅ All text consistency issues resolved
+CAMPAIGN TRACKING INTEGRATION:
+- ✅ Campaign manager imports added
+- ✅ Enhanced start_command with campaign tracking
+- ✅ format_campaign_welcome integration
+- ✅ Campaign data processing in start flow
 """
 
 import logging
@@ -36,6 +36,9 @@ from database import (
 from config import FCB_STAR_PACKAGES, INSTANT_RESPONSES, INSTANT_SPIN_RESPONSES, FOMO_CACHE
 from api_client import get_coin_info_ultra_fast, get_optimized_session
 from analysis import calculate_fomo_status_ultra_fast
+
+# Campaign imports - CAMPAIGN TRACKING INTEGRATION
+from campaign_manager import campaign_manager
 
 # Formatter imports
 from formatters import (
@@ -337,7 +340,75 @@ def get_user_balance_info(user_id):
         }
 
 # =============================================================================
-# END OF PART 1/8 - Core Setup & Session Management Complete
+# ENHANCED START COMMAND WITH CAMPAIGN TRACKING - CAMPAIGN INTEGRATION
+# =============================================================================
+
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Enhanced start command with campaign tracking"""
+    user_id = update.effective_user.id
+    username = update.effective_user.username or "Unknown"
+    
+    logging.info(f"🔍 START DEBUG: User {username} (ID: {user_id}) triggered /start command")
+    
+    # CAMPAIGN TRACKING INTEGRATION: Process campaign tracking
+    campaign_data = campaign_manager.process_start_command(user_id, context.args)
+    
+    # Log campaign attribution
+    if campaign_data['is_campaign_user']:
+        logging.info(f"📈 User {user_id} from campaign: {campaign_data['campaign_code']} (source: {campaign_data['source']})")
+    
+    # Subscribe user to notifications
+    add_user_to_notifications(user_id)
+    logging.info(f"User {username} (ID: {user_id}) subscribed to opportunity alerts")
+    
+    # CAMPAIGN TRACKING INTEGRATION: Format welcome message with campaign awareness
+    welcome_text = format_campaign_welcome(campaign_data)
+    
+    # Add the rest of the welcome content
+    welcome_text += f"""
+
+💎 <b>What Makes Us Different:</b>
+Our proprietary FOMO algorithm analyzes 15+ market indicators including volume spikes, price momentum, social sentiment, and whale activity to identify early signals of moon shots.
+
+🔥 <b>Premium Alert System:</b>
+• Get high-quality opportunities sent directly (80%+ FOMO score only)
+• Smart alerts every 4 hours (6 daily max)
+• Click alert buttons for instant analysis
+
+🎁 <b>5 Scans Per Day FREE!</b>
+Plus 3 bonus starter scans - begin exploring immediately!
+
+💰 <b>Token Economics (Crystal Clear):</b>
+🟢 <b>Always FREE:</b> BACK navigation, buy links, alerts
+🔴 <b>1 token cost:</b> Fresh searches, new discoveries
+🎁 <b>FREE Allowance:</b> 8 starter scans + 5 daily scans (resets 00:00 UTC)
+
+⚡ <b>Quick Start:</b> Type '<b>bitcoin</b>' in chat to start me up and experience our analysis firsthand! <b>Plus you get 8 FREE scans to explore</b> with 5 more FREE every day!
+
+📋 <b>Legal Disclaimer & Terms:</b>
+By using this bot, you agree to our T&Cs. This is educational/entertainment content only - NOT financial advice. Crypto trading is extremely high risk and you could lose everything. Always DYOR (Do Your Own Research).
+
+🎯 <b>Ready?</b> Type '<b>bitcoin</b>' in chat to start me up and discover why thousands trust our FOMO analysis! <b>8 FREE starter scans + 5 daily FREE scans</b> - no payment needed to begin!
+
+💡 <b>Get Help:</b> Type /help for full instructions"""
+    
+    # Your existing keyboard
+    keyboard = [
+        [InlineKeyboardButton("🔍 Start Scanning", callback_data="start_scan")],
+        [InlineKeyboardButton("📊 My Balance", callback_data="check_balance")], 
+        [InlineKeyboardButton("❓ How It Works", callback_data="show_help")]
+    ]
+    
+    await update.message.reply_text(
+        welcome_text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='HTML'
+    )
+    
+    logging.info(f"✅ START: Successfully sent welcome message to {username}")
+
+# =============================================================================
+# END OF PART 1/8 - Core Setup & Session Management with Campaign Tracking Complete
 # =============================================================================
 
 """
@@ -455,62 +526,6 @@ async def safe_edit_message(query, text=None, caption=None, reply_markup=None, p
 # =============================================================================
 # Command Handlers - FIXED with Enhanced Debug and Error Handling
 # =============================================================================
-
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command with CLEANED welcome message - removed Track Our Calls"""
-    try:
-        user_id = update.effective_user.id
-        username = update.effective_user.username or "Unknown"
-        
-        logging.info(f"🔍 START DEBUG: User {username} (ID: {user_id}) triggered /start command")
-        
-        # Subscribe user to notifications
-        add_user_to_notifications(user_id)
-        
-        logging.info(f"User {username} (ID: {user_id}) subscribed to opportunity alerts")
-        
-        # CLEANED welcome message - removed "Track Our Calls" and commands list
-        message = f"""🚀 <b>Welcome to FOMO Crypto Bot!</b>
-
-🎯 <b>Get started instantly:</b> Type '<b>bitcoin</b>' in chat to start me up and see our advanced FOMO analysis in action! <b>You get 8 FREE scans to start</b> + 5 FREE daily scans forever!
-
-💎 <b>What Makes Us Different:</b>
-Our proprietary FOMO algorithm analyzes 15+ market indicators including volume spikes, price momentum, social sentiment, and whale activity to identify early signals of moon shots.
-
-🔥 <b>Premium Alert System:</b>
-• Get high-quality opportunities sent directly (80%+ FOMO score only)
-• Smart alerts every 4 hours (6 daily max)
-• Click alert buttons for instant analysis
-
-🎁 <b>5 Scans Per Day FREE!</b>
-Plus 3 bonus starter scans - begin exploring immediately!
-
-💰 <b>Token Economics (Crystal Clear):</b>
-🟢 <b>Always FREE:</b> BACK navigation, buy links, alerts
-🔴 <b>1 token cost:</b> Fresh searches, new discoveries
-🎁 <b>FREE Allowance:</b> 8 starter scans + 5 daily scans (resets 00:00 UTC)
-
-⚡ <b>Quick Start:</b> Type '<b>bitcoin</b>' in chat to start me up and experience our analysis firsthand! <b>Plus you get 8 FREE scans to explore</b> with 5 more FREE every day!
-
-📋 <b>Legal Disclaimer & Terms:</b>
-By using this bot, you agree to our T&Cs. This is educational/entertainment content only - NOT financial advice. Crypto trading is extremely high risk and you could lose everything. Always DYOR (Do Your Own Research).
-
-🎯 <b>Ready?</b> Type '<b>bitcoin</b>' in chat to start me up and discover why thousands trust our FOMO analysis! <b>8 FREE starter scans + 5 daily FREE scans</b> - no payment needed to begin!
-
-💡 <b>Get Help:</b> Type /help for full instructions"""
-        
-        await update.message.reply_text(message, parse_mode='HTML')
-        logging.info(f"✅ START: Successfully sent welcome message to {username}")
-        
-    except Exception as e:
-        logging.error(f"❌ START ERROR: Failed for user {update.effective_user.id}: {e}")
-        try:
-            await update.message.reply_text(
-                "❌ Error loading welcome message. Please try /help or contact support.",
-                parse_mode='HTML'
-            )
-        except Exception:
-            pass
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /help command - FIXED with comprehensive debug and error handling"""
@@ -2823,7 +2838,51 @@ FIXES APPLIED:
 - ✅ Added comprehensive error handling
 - ✅ Added command verification system
 - ✅ Fixed import order issues
+- ✅ Added admin campaign commands
 """
+
+# =============================================================================
+# ADMIN CAMPAIGN COMMANDS
+# =============================================================================
+
+async def campaign_links_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command: Get all campaign links"""
+    user_id = update.effective_user.id
+    
+    # Import here to avoid circular imports
+    try:
+        from config import ADMIN_USER_IDS
+    except ImportError:
+        ADMIN_USER_IDS = []
+    
+    if user_id not in ADMIN_USER_IDS:
+        await update.message.reply_text("🚫 Admin access required")
+        return
+    
+    links_text = campaign_manager.generate_all_links()
+    await update.message.reply_text(links_text, parse_mode='Markdown')
+
+async def campaign_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command: View campaign analytics"""
+    user_id = update.effective_user.id
+    
+    # Import here to avoid circular imports
+    try:
+        from config import ADMIN_USER_IDS, ANALYTICS_ENABLED
+    except ImportError:
+        ADMIN_USER_IDS = []
+        ANALYTICS_ENABLED = True
+    
+    if user_id not in ADMIN_USER_IDS:
+        await update.message.reply_text("🚫 Admin access required")
+        return
+    
+    if not ANALYTICS_ENABLED:
+        await update.message.reply_text("📊 Analytics disabled in config")
+        return
+    
+    report = campaign_manager.get_analytics_report()
+    await update.message.reply_text(report, parse_mode='Markdown')
 
 # =============================================================================
 # Payment Handlers - Complete Stars Payment Processing (FIXED)
@@ -2985,6 +3044,19 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 # CRITICAL FIX: Enhanced Handler Setup Function
 # =============================================================================
 
+def setup_admin_handlers(app):
+    """Setup admin campaign handlers"""
+    from telegram.ext import CommandHandler
+    
+    logging.info("🔧 Setting up admin campaign handlers...")
+    
+    try:
+        app.add_handler(CommandHandler("links", campaign_links_command))
+        app.add_handler(CommandHandler("campaigns", campaign_stats_command))
+        logging.info("✅ Admin campaign handlers registered")
+    except Exception as e:
+        logging.error(f"❌ Admin handler registration failed: {e}")
+
 def setup_handlers(app):
     """
     Setup all handlers with perfect token economics and comprehensive debugging
@@ -3076,26 +3148,34 @@ def setup_handlers(app):
     except Exception as payment_error:
         logging.error(f"❌ Payment handler registration failed: {payment_error}")
     
-    # CRITICAL FIX 6: Main message handler LAST (very important!)
+    # CRITICAL FIX 6: Admin campaign handlers
+    try:
+        setup_admin_handlers(app)
+        logging.info("✅ Admin campaign handlers registered")
+    except Exception as admin_error:
+        logging.error(f"❌ Admin handler registration failed: {admin_error}")
+    
+    # CRITICAL FIX 7: Main message handler LAST (very important!)
     try:
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, send_coin_message_ultra_fast))
         logging.info("✅ Main message handler registered (LAST - correct order)")
     except Exception as message_error:
         logging.error(f"❌ Main message handler registration failed: {message_error}")
     
-    # CRITICAL FIX 7: Error handler with enhanced logging
+    # CRITICAL FIX 8: Error handler with enhanced logging
     try:
         app.add_error_handler(error_handler)
         logging.info("✅ Error handler registered")
     except Exception as error_handler_error:
         logging.error(f"❌ Error handler registration failed: {error_handler_error}")
     
-    # CRITICAL FIX 8: Final verification and status report
+    # CRITICAL FIX 9: Final verification and status report
     logging.info("=" * 60)
     logging.info("🎯 HANDLER SETUP COMPLETE - STATUS REPORT:")
     logging.info(f"  📝 Commands registered: {registered_count}")
     logging.info(f"  🔄 Callback handlers: ✅")
     logging.info(f"  💳 Payment handlers: ✅")
+    logging.info(f"  👑 Admin handlers: ✅")
     logging.info(f"  📨 Message handler: ✅")
     logging.info(f"  ⚠️ Error handler: ✅")
     
@@ -3107,6 +3187,7 @@ def setup_handlers(app):
     
     logging.info("✅ ALL FIXES APPLIED: Handler setup completed successfully!")
     logging.info("🎯 Bot is ready for production with enhanced error handling!")
+    logging.info("📈 Campaign tracking system is active!")
     
     return True
 
@@ -3121,7 +3202,8 @@ def debug_handler_setup():
     # Check if functions are defined
     functions_to_check = [
         'start_command', 'help_command', 'terms_command', 'scans_command',
-        'premium_command', 'support_command', 'buy_command', 'balance_command'
+        'premium_command', 'support_command', 'buy_command', 'balance_command',
+        'campaign_links_command', 'campaign_stats_command'
     ]
     
     for func_name in functions_to_check:
@@ -3146,6 +3228,12 @@ def debug_handler_setup():
         logging.info("  ✅ Config imported successfully")
     except ImportError as e:
         logging.error(f"  ❌ Config import failed: {e}")
+    
+    try:
+        from campaign_manager import campaign_manager
+        logging.info("  ✅ Campaign manager imported successfully")
+    except ImportError as e:
+        logging.error(f"  ❌ Campaign manager import failed: {e}")
 
 def test_help_command_directly():
     """Test function to verify help command works"""
@@ -3166,66 +3254,77 @@ def test_help_command_directly():
         return False
 
 # =============================================================================
+# COMMAND REGISTRY FOR VERIFICATION
+# =============================================================================
+
+REGISTERED_COMMANDS = {
+    'start': start_command,
+    'help': help_command,
+    'terms': terms_command,
+    'scans': scans_command,
+    'premium': premium_command,
+    'support': support_command,
+    'buy': buy_command,
+    'balance': balance_command,
+    'debug': debug_balance_command,
+    'links': campaign_links_command,
+    'campaigns': campaign_stats_command
+}
+
+def verify_command_registration():
+    """Verify all commands are properly defined"""
+    logging.info("🔍 VERIFYING COMMAND REGISTRATION:")
+    for cmd_name, cmd_func in REGISTERED_COMMANDS.items():
+        if callable(cmd_func):
+            logging.info(f"  ✅ /{cmd_name} -> {cmd_func.__name__}")
+        else:
+            logging.error(f"  ❌ /{cmd_name} -> NOT CALLABLE!")
+    logging.info(f"✅ Total commands registered: {len(REGISTERED_COMMANDS)}")
+
+# =============================================================================
 # Final Implementation Summary & Deployment Notes
 # =============================================================================
 
 """
-🎉 CRITICAL FIXES APPLIED - HANDLERS PART 8/8 COMPLETE! 🎉
+🎉 CAMPAIGN TRACKING SYSTEM COMPLETE! 🎉
 
-✅ **CRITICAL FIXES IMPLEMENTED:**
+✅ **CAMPAIGN SYSTEM IMPLEMENTED:**
 
-🔧 **Enhanced Handler Setup:**
-• Added comprehensive command verification
-• Fixed import order issues  
-• Added detailed debug logging for troubleshooting
-• Enhanced error handling throughout
+📈 **Campaign Manager:**
+• Centralized campaign link management
+• .env-driven configuration  
+• Auto-generated campaign URLs
+• Campaign analytics and reporting
 
-🎯 **Command Registration Fixes:**
-• Commands now registered with verification
-• Added fallback handling for missing imports
-• Fixed handler registration order (commands before message handler)
-• Added comprehensive status reporting
+🔧 **Database Integration:**
+• Campaign tracking columns added
+• User acquisition source tracking
+• Purchase conversion analytics
+• Admin-only analytics access
 
-🔍 **Debug & Troubleshooting:**
-• Added debug_handler_setup() function
-• Added test_help_command_directly() function  
-• Enhanced logging throughout setup process
-• Added command verification system
+🎯 **Admin Commands:**
+• /links - Get all campaign URLs (admin only)
+• /campaigns - View analytics (admin only)
+• Links auto-update from .env changes
+• Performance tracking by source
 
-📝 **Error Handling:**
-• Enhanced error handler with detailed logging
-• Fallback messages for import failures
-• Comprehensive exception handling in all commands
-• User-friendly error messages
+⚙️ **Configuration:**
+• CAMPAIGN_TRACKING_ENABLED toggle
+• BOT_USERNAME for link generation
+• ADMIN_USER_IDS for access control
+• Campaign codes in .env variables
 
-🛠️ **Key Improvements:**
-1. Handler setup now verifies each step
-2. Commands have fallback error handling  
-3. Import issues are caught and logged
-4. Database initialization is verified
-5. Payment handlers have enhanced error handling
+📊 **Analytics Tracking:**
+• User acquisition by source
+• Purchase conversion rates
+• Campaign performance metrics
+• Source attribution tracking
 
-🎯 **TROUBLESHOOTING HELP:**
-If /help still doesn't work after this fix:
-
-1. Check logs for "HANDLER SETUP" messages
-2. Run debug_handler_setup() to verify functions
-3. Check that all imports are working
-4. Verify database initialization
-5. Check command registration order
-
-✅ **DEPLOYMENT READY:**
-This fix addresses the most common causes of command failures:
-- Import chain issues
-- Handler registration order
-- Missing function definitions  
-- Database connection problems
-- Error handling gaps
-
-The enhanced setup function will now provide detailed logging
-to help identify exactly where any remaining issues occur.
+🎯 **DEPLOYMENT READY:**
+All files are updated and integrated with your existing modular structure.
+Campaign tracking works seamlessly with your current FCB token system.
 """
 
 # =============================================================================
-# END OF PART 8/8 - CRITICAL FIXES APPLIED & ENHANCED SETUP COMPLETE
+# END OF PART 8/8 - CAMPAIGN TRACKING SYSTEM COMPLETE
 # =============================================================================

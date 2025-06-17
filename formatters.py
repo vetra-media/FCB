@@ -85,6 +85,68 @@ def get_buy_coin_url(coin_data):
     return tracking_url
 
 # =============================================================================
+# CAMPAIGN MESSAGE FORMATTING FUNCTIONS
+# =============================================================================
+
+def format_campaign_welcome(campaign_data: dict):
+    """Format welcome message based on campaign source"""
+    
+    if campaign_data['is_campaign_user']:
+        source = campaign_data['source']
+        platform_emoji = {
+            'twitter': '🐦',
+            'reddit': '🟠', 
+            'instagram': '📸',
+            'tiktok': '🎵',
+            'youtube': '📺',
+            'telegram': '✈️',
+            'referral': '👥',
+            'affiliate': '🤝'
+        }
+        
+        emoji = platform_emoji.get(source, '🎯')
+        welcome_text = f"{emoji} **Welcome from {source.title()}!** Thanks for discovering FOMO Crypto Bot!\n\n"
+    else:
+        welcome_text = "🎉 **Welcome to FOMO Crypto Bot!**\n\n"
+    
+    welcome_text += """🚀 **Your Crypto FOMO Discovery Tool**
+
+🆓 **You get 5 FREE scans daily** + 3 bonus starter scans!
+💎 **Find early opportunities** before they pump  
+⚡ **Real-time alerts** with actionable insights
+
+Ready to discover your next crypto gem?"""
+
+    return welcome_text
+
+def format_analytics_report(analytics_data: dict):
+    """Format campaign analytics for admin view"""
+    if not analytics_data:
+        return "📊 No campaign data available yet."
+    
+    report = "📈 **Campaign Performance Report**\n\n"
+    
+    # User acquisition by source
+    sources = analytics_data.get('sources', {})
+    if sources:
+        report += "👥 **User Acquisition:**\n"
+        total_users = sum(sources.values())
+        for source, count in sources.items():
+            percentage = (count / total_users * 100) if total_users > 0 else 0
+            report += f"• {source}: {count} users ({percentage:.1f}%)\n"
+    
+    # Conversion rates
+    conversions = analytics_data.get('conversions', [])
+    if conversions:
+        report += "\n💰 **Purchase Conversion Rates:**\n"
+        for source, total, buyers, rate in conversions:
+            report += f"• {source}: {rate}% ({buyers}/{total} users)\n"
+    
+    report += f"\n📊 *Total tracked users: {sum(sources.values()) if sources else 0}*"
+    
+    return report
+
+# =============================================================================
 # SIMPLIFIED MESSAGE FORMATTING FUNCTIONS
 # =============================================================================
 
