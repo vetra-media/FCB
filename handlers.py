@@ -38,7 +38,7 @@ from api_client import get_coin_info_ultra_fast, get_optimized_session
 from analysis import calculate_fomo_status_ultra_fast
 
 # Campaign imports - CAMPAIGN TRACKING INTEGRATION
-from campaign_manager import campaign_manager
+from campaign_manager import campaign_manager, format_campaign_welcome
 
 # Formatter imports
 from formatters import (
