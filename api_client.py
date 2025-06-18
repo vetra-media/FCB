@@ -1,6 +1,7 @@
 """
-API Client module for CFB (Crypto FOMO Bot)
-Handles all CoinGecko API interactions with optimized session management
+API Client module for CFB (Crypto FOMO Bot) - PRO API VERSION
+Handles all CoinGecko Pro API interactions with optimized session management
+Updated with corrected Pro API implementation for real-time data
 """
 
 import aiohttp
@@ -14,59 +15,66 @@ from io import BytesIO
 from config import COINGECKO_API, COINGECKO_API_KEY, COIN_SYMBOL_OVERRIDES
 
 # =============================================================================
+# PRO API CONFIGURATION
+# =============================================================================
+
+# Your validated Pro API key
+PRO_API_KEY = "CG-bJP1bqyMemFNQv5dp4nvA9xm"
+PRO_API_BASE = "https://pro-api.coingecko.com/api/v3"
+
+# =============================================================================
 # ULTRA-FAST SESSION MANAGEMENT
 # =============================================================================
 
 session = None
 
 async def get_optimized_session():
-    """Ultra-optimized session for maximum speed"""
+    """Ultra-optimized session for maximum speed with Pro API"""
     global session
     if session is None or session.closed:
         # Aggressive timeout settings for speed
         timeout = aiohttp.ClientTimeout(
-            total=3,          # Was 8 - now 3 seconds max
-            connect=0.5,      # Was 2 - now 0.5 seconds to connect
-            sock_read=2       # 2 seconds to read response
+            total=8,          # Increased slightly for Pro API stability
+            connect=2,        # Pro API connection time
+            sock_read=6       # Pro API read time
         )
         
         # Aggressive connection pool for maximum throughput
         connector = aiohttp.TCPConnector(
-            limit=200,                    # Increased from 150
-            limit_per_host=100,          # Increased from 75
-            ttl_dns_cache=300,           # Cache DNS for 5 minutes
+            limit=200,                    
+            limit_per_host=100,          
+            ttl_dns_cache=300,           
             use_dns_cache=True,
-            keepalive_timeout=60,        # Shorter keepalive
+            keepalive_timeout=60,        
             enable_cleanup_closed=True,
-            force_close=False,           # Reuse connections aggressively
+            force_close=False,           
         )
         
         session = aiohttp.ClientSession(
             timeout=timeout,
             connector=connector,
             headers={
-                'User-Agent': 'FOMO-Bot-Ultra/4.0',
+                'User-Agent': 'FOMO-Bot-Pro/4.0',
                 'Accept': 'application/json',
-                'Accept-Encoding': 'gzip, deflate',  # Enable compression
-                'Connection': 'keep-alive',
-                'x-cg-pro-api-key': COINGECKO_API_KEY
+                'Accept-Encoding': 'gzip, deflate',
+                'Connection': 'keep-alive'
             }
         )
     return session
 
 # =============================================================================
-# ULTRA-FAST RATE LIMITER
+# ULTRA-FAST RATE LIMITER (Pro API has higher limits)
 # =============================================================================
 
 class OptimizedRateLimiter:
-    def __init__(self, calls_per_minute=450):  # Decreased from 800
+    def __init__(self, calls_per_minute=800):  # Pro API higher limits
         self.calls_per_minute = calls_per_minute
-        self.min_interval = 60.0 / calls_per_minute  # 0.075 seconds
+        self.min_interval = 60.0 / calls_per_minute
         self.call_times = []
-        self.burst_allowance = 50  # Increased burst from 10 to 50
+        self.burst_allowance = 100  # Higher burst for Pro API
         
     async def acquire(self):
-        """Ultra-aggressive rate limiter"""
+        """Ultra-aggressive rate limiter for Pro API"""
         now = time.time()
         
         # Clean old calls (older than 1 minute)
@@ -79,21 +87,20 @@ class OptimizedRateLimiter:
         
         # For sustained calls, use minimal delay
         if len(self.call_times) >= self.calls_per_minute:
-            # Only sleep if we're really hitting the limit
-            sleep_time = 0.1  # Very short sleep
+            sleep_time = 0.075  # Very short sleep for Pro API
             await asyncio.sleep(sleep_time)
         
         self.call_times.append(time.time())
 
 # Global rate limiter instance
-rate_limiter = OptimizedRateLimiter(calls_per_minute=450)
+rate_limiter = OptimizedRateLimiter(calls_per_minute=800)
 
 # =============================================================================
 # ULTRA-FAST BATCH PROCESSING
 # =============================================================================
 
 class BatchProcessor:
-    def __init__(self, max_concurrent=100, batch_size=50):  # Increased limits
+    def __init__(self, max_concurrent=150, batch_size=75):  # Pro API limits
         self.max_concurrent = max_concurrent
         self.batch_size = batch_size
         self.semaphore = asyncio.Semaphore(max_concurrent)
@@ -115,25 +122,71 @@ class BatchProcessor:
             results.extend([r for r in batch_results if not isinstance(r, Exception)])
             
             # Minimal delay between batches
-            await asyncio.sleep(0.05)  # Reduced from 0.1
+            await asyncio.sleep(0.05)
         
         return results
     
     async def _process_with_semaphore(self, func, item):
         async with self.semaphore:
-            # No rate limiting for batch processing - go full speed
             return await func(item)
 
 # Global batch processor
-batch_processor = BatchProcessor(max_concurrent=100, batch_size=50)
+batch_processor = BatchProcessor(max_concurrent=150, batch_size=75)
 
 # =============================================================================
-# ULTRA-FAST API FUNCTIONS
+# PRO API FUNCTIONS - CORRECTED IMPLEMENTATIONS
 # =============================================================================
+
+async def fetch_coin_data_ultra_fast(coin_id):
+    """
+    CORRECTED PRO API VERSION: Uses /markets endpoint for real-time data
+    This is the proven working implementation from your testing
+    """
+    try:
+        # Correct Pro API endpoint for markets data
+        url = f"{PRO_API_BASE}/coins/markets"
+        
+        # Correct authentication method (URL parameter)
+        params = {
+            'vs_currency': 'usd',
+            'ids': coin_id,
+            'order': 'market_cap_desc',
+            'per_page': '1',
+            'page': '1',
+            'sparkline': 'false',
+            'price_change_percentage': '1h,24h',
+            'x_cg_pro_api_key': PRO_API_KEY  # Proven authentication method
+        }
+        
+        session = await get_optimized_session()
+        async with session.get(url, params=params) as response:
+            if response.status == 200:
+                data = await response.json()
+                if data:
+                    coin = data[0]
+                    return {
+                        'id': coin.get('id'),
+                        'symbol': coin.get('symbol', '').upper(),
+                        'name': coin.get('name'),
+                        'price': coin.get('current_price', 0),
+                        'volume': coin.get('total_volume', 0),
+                        'market_cap': coin.get('market_cap', 0),
+                        'market_cap_rank': coin.get('market_cap_rank', 999),
+                        'change_1h': coin.get('price_change_percentage_1h', 0) or 0,
+                        'change_24h': coin.get('price_change_percentage_24h', 0) or 0
+                    }
+            else:
+                logging.error(f"Pro API error {response.status} for {coin_id}")
+        
+        return None
+        
+    except Exception as e:
+        logging.error(f"Pro API fetch error for {coin_id}: {e}")
+        return None
 
 async def fetch_market_data_ultra_fast(page=1, per_page=250):
-    """Blazing fast market data - no rate limiting for bursts"""
-    url = f"https://pro-api.coingecko.com/api/v3/coins/markets"
+    """Blazing fast market data with Pro API"""
+    url = f"{PRO_API_BASE}/coins/markets"
     params = {
         'vs_currency': 'usd',
         'order': 'market_cap_desc',
@@ -141,14 +194,13 @@ async def fetch_market_data_ultra_fast(page=1, per_page=250):
         'page': page,
         'sparkline': 'false',
         'price_change_percentage': '1h,24h',
-        'x_cg_pro_api_key': COINGECKO_API_KEY
+        'x_cg_pro_api_key': PRO_API_KEY
     }
     
     session = await get_optimized_session()
     try:
         async with session.get(url, params=params) as response:
             if response.status == 429:
-                # Very short retry for rate limits
                 await asyncio.sleep(0.1)
                 return []
             if response.status == 200:
@@ -162,13 +214,13 @@ async def fetch_market_data_ultra_fast(page=1, per_page=250):
         return []
 
 async def fetch_ohlcv_data_ultra_fast(coin_id, days=7):
-    """Ultra-fast OHLCV with minimal delay"""
-    url = f"https://pro-api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
+    """Ultra-fast OHLCV with Pro API"""
+    url = f"{PRO_API_BASE}/coins/{coin_id}/market_chart"
     params = {
         "vs_currency": "usd", 
         "days": days, 
         "interval": "daily",
-        "x_cg_pro_api_key": COINGECKO_API_KEY
+        "x_cg_pro_api_key": PRO_API_KEY
     }
     
     session = await get_optimized_session()
@@ -181,9 +233,9 @@ async def fetch_ohlcv_data_ultra_fast(coin_id, days=7):
         return None
 
 async def fetch_ticker_data_ultra_fast(coin_id):
-    """Ultra-fast ticker data"""
-    url = f"https://pro-api.coingecko.com/api/v3/coins/{coin_id}/tickers"
-    params = {"x_cg_pro_api_key": COINGECKO_API_KEY}
+    """Ultra-fast ticker data with Pro API"""
+    url = f"{PRO_API_BASE}/coins/{coin_id}/tickers"
+    params = {"x_cg_pro_api_key": PRO_API_KEY}
     
     session = await get_optimized_session()
     try:
@@ -194,26 +246,8 @@ async def fetch_ticker_data_ultra_fast(coin_id):
     except:
         return None
 
-async def fetch_coin_data_ultra_fast(coin_id):
-    """Blazing fast coin data - no waiting"""
-    url = f"https://pro-api.coingecko.com/api/v3/coins/{coin_id}"
-    params = {"x_cg_pro_api_key": COINGECKO_API_KEY}
-    
-    session = await get_optimized_session()
-    try:
-        async with session.get(url, params=params) as response:
-            if response.status == 200:
-                return await response.json()
-            return None
-    except asyncio.TimeoutError:
-        logging.debug(f"Timeout: {coin_id}")
-        return None
-    except Exception as e:
-        logging.debug(f"Error {coin_id}: {e}")
-        return None
-
 async def get_coin_info_ultra_fast(query):
-    """Ultra-fast coin lookup with parallel search and data fetch"""
+    """Ultra-fast coin lookup with Pro API search and data fetch"""
     try:
         query_lower = query.lower()
         
@@ -221,9 +255,9 @@ async def get_coin_info_ultra_fast(query):
         if query_lower in COIN_SYMBOL_OVERRIDES:
             coin_id = COIN_SYMBOL_OVERRIDES[query_lower]
         else:
-            # Fast search lookup
-            search_url = f"https://pro-api.coingecko.com/api/v3/search"
-            params = {"query": query, "x_cg_pro_api_key": COINGECKO_API_KEY}
+            # Fast search lookup with Pro API
+            search_url = f"{PRO_API_BASE}/search"
+            params = {"query": query, "x_cg_pro_api_key": PRO_API_KEY}
             
             session = await get_optimized_session()
             async with session.get(search_url, params=params) as response:
@@ -237,35 +271,57 @@ async def get_coin_info_ultra_fast(query):
                 else:
                     return None, None
         
-        # Fetch coin data (no rate limiting for single calls)
-        coin_data = await fetch_coin_data_ultra_fast(coin_id)
-        if not coin_data:
-            return None, None
+        # Fetch coin data using the corrected function
+        coin_data_markets = await fetch_coin_data_ultra_fast(coin_id)
+        if coin_data_markets:
+            # Convert markets data to standard format
+            coin_info = {
+                'id': coin_data_markets['id'],
+                'name': coin_data_markets['name'],
+                'symbol': coin_data_markets['symbol'],
+                'logo': None,  # Markets endpoint doesn't include logo
+                'price': coin_data_markets['price'],
+                'change_1h': coin_data_markets['change_1h'],
+                'change_24h': coin_data_markets['change_24h'],
+                'market_cap': coin_data_markets['market_cap'],
+                'volume': coin_data_markets['volume'],
+                'cmc_rank': coin_data_markets['market_cap_rank'],
+                'source_url': f'https://www.coingecko.com/en/coins/{coin_id}',
+            }
+            return coin_id, coin_info
         
-        # Parse data super fast
-        market_data = coin_data.get('market_data', {})
-        coin_info = {
-            'id': coin_id,
-            'name': coin_data.get('name', 'Unknown'),
-            'symbol': coin_data.get('symbol', '').upper(),
-            'logo': coin_data.get('image', {}).get('large'),
-            'price': market_data.get('current_price', {}).get('usd', 0),
-            'change_1h': market_data.get('price_change_percentage_1h_in_currency', {}).get('usd', 0),
-            'change_24h': market_data.get('price_change_percentage_24h_in_currency', {}).get('usd', 0),
-            'market_cap': market_data.get('market_cap', {}).get('usd', 0),
-            'volume': market_data.get('total_volume', {}).get('usd', 0),
-            'cmc_rank': coin_data.get('market_cap_rank'),
-            'source_url': f'https://www.coingecko.com/en/coins/{coin_id}',
-        }
+        # Fallback to detailed endpoint for logo if needed
+        detail_url = f"{PRO_API_BASE}/coins/{coin_id}"
+        params = {"x_cg_pro_api_key": PRO_API_KEY}
         
-        return coin_id, coin_info
+        session = await get_optimized_session()
+        async with session.get(detail_url, params=params) as response:
+            if response.status == 200:
+                detail_data = await response.json()
+                market_data = detail_data.get('market_data', {})
+                coin_info = {
+                    'id': coin_id,
+                    'name': detail_data.get('name', 'Unknown'),
+                    'symbol': detail_data.get('symbol', '').upper(),
+                    'logo': detail_data.get('image', {}).get('large'),
+                    'price': market_data.get('current_price', {}).get('usd', 0),
+                    'change_1h': market_data.get('price_change_percentage_1h_in_currency', {}).get('usd', 0),
+                    'change_24h': market_data.get('price_change_percentage_24h_in_currency', {}).get('usd', 0),
+                    'market_cap': market_data.get('market_cap', {}).get('usd', 0),
+                    'volume': market_data.get('total_volume', {}).get('usd', 0),
+                    'cmc_rank': detail_data.get('market_cap_rank'),
+                    'source_url': f'https://www.coingecko.com/en/coins/{coin_id}',
+                }
+                return coin_id, coin_info
+        
+        return None, None
         
     except Exception as e:
-        logging.error(f'Ultra-fast lookup failed for {query}: {e}')
+        logging.error(f'Ultra-fast Pro API lookup failed for {query}: {e}')
         return None, None
 
 # =============================================================================
-# FALLBACK SYNC FUNCTIONS (FOR COMPATIBILITY)
+# FALLBACK SYNC FUNCTIONS (FOR COMPATIBILITY) - Updated with Pro API
 # =============================================================================
 
 def fuzzy_find_coin(query, all_coins):
@@ -279,14 +335,18 @@ def fuzzy_find_coin(query, all_coins):
     return id_map[best_matches[0]] if best_matches else None
 
 def fetch_ohlcv_data(coin_id, days=7):
-    """Sync fallback OHLCV fetching"""
-    url = f"https://pro-api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
-    params = {"vs_currency": "usd", "days": days, "interval": "daily"}
-    if COINGECKO_API_KEY:
-        params["x_cg_pro_api_key"] = COINGECKO_API_KEY
+    """Sync fallback OHLCV fetching with Pro API"""
+    url = f"{PRO_API_BASE}/coins/{coin_id}/market_chart"
+    params = {
+        "vs_currency": "usd", 
+        "days": days, 
+        "interval": "daily",
+        "x_cg_pro_api_key": PRO_API_KEY
+    }
+    
     try:
         logging.info(f"Fetching OHLCV for {coin_id}")
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, timeout=15)
         if response.status_code == 429:
             logging.warning(f"Rate limit for OHLCV: {coin_id}")
             time.sleep(2)
@@ -303,15 +363,15 @@ def fetch_ohlcv_data(coin_id, days=7):
         return None
 
 def fetch_from_coingecko(query):
-    """Enhanced coin lookup with better error handling"""
-    url_list = 'https://pro-api.coingecko.com/api/v3/coins/list'
-    url_data = f"https://pro-api.coingecko.com/api/v3/coins/{{}}"
+    """Enhanced coin lookup with Pro API and better error handling"""
+    url_list = f'{PRO_API_BASE}/coins/list'
+    url_data = f"{PRO_API_BASE}/coins/{{}}"
     
     try:
-        # Get coins list with timeout and retries
+        # Get coins list with Pro API
         for attempt in range(3):
             try:
-                params = {'x_cg_pro_api_key': COINGECKO_API_KEY}
+                params = {'x_cg_pro_api_key': PRO_API_KEY}
                 all_coins_response = requests.get(url_list, params=params, timeout=15)
                 all_coins_response.raise_for_status()
                 all_coins = all_coins_response.json()
@@ -343,10 +403,8 @@ def fetch_from_coingecko(query):
                 return None, None
             cg_id = match['id']
         
-        # Fetch coin data with retries
-        params = {}
-        if COINGECKO_API_KEY:
-            params['x_cg_pro_api_key'] = COINGECKO_API_KEY
+        # Fetch coin data with Pro API
+        params = {'x_cg_pro_api_key': PRO_API_KEY}
             
         for attempt in range(3):
             try:
@@ -354,14 +412,14 @@ def fetch_from_coingecko(query):
                 
                 if data_response.status_code == 429:
                     logging.warning(f"Rate limit hit for {cg_id}, attempt {attempt + 1}")
-                    time.sleep(5 * (attempt + 1))  # Exponential backoff
+                    time.sleep(3 * (attempt + 1))  # Shorter backoff for Pro API
                     continue
                     
                 data_response.raise_for_status()
                 data = data_response.json()
                 
                 if 'error' in data:
-                    logging.error(f"CoinGecko API error for {cg_id}: {data['error']}")
+                    logging.error(f"CoinGecko Pro API error for {cg_id}: {data['error']}")
                     return None, None
                 
                 break
@@ -370,12 +428,12 @@ def fetch_from_coingecko(query):
                 if attempt == 2:
                     logging.error(f"Timeout fetching data for {cg_id} after 3 attempts")
                     return None, None
-                time.sleep(3)
+                time.sleep(2)
             except Exception as e:
                 logging.error(f"Error fetching data for {cg_id} (attempt {attempt + 1}): {e}")
                 if attempt == 2:
                     return None, None
-                time.sleep(3)
+                time.sleep(2)
         
         # Parse coin data safely
         market_data = data.get('market_data', {})
@@ -396,11 +454,11 @@ def fetch_from_coingecko(query):
         return cg_id, coin_info
         
     except Exception as e:
-        logging.error(f'CoinGecko fetch failed for {query}: {e}')
+        logging.error(f'CoinGecko Pro API fetch failed for {query}: {e}')
         return None, None
 
 def get_coin_info(query):
-    """Standard coin info lookup"""
+    """Standard coin info lookup with Pro API"""
     cg_id, cg_data = fetch_from_coingecko(query)
     if cg_data:
         cg_data['source'] = 'coingecko'
