@@ -1,0 +1,41 @@
+                            try:
+                                await query.message.delete()
+                                await context.bot.send_photo(
+                                    chat_id=query.message.chat_id,
+                                    photo=image_bytes,
+                                    caption=msg,
+                                    parse_mode='HTML',
+                                    reply_markup=keyboard
+                                )
+                                logging.info(f"🎯 Discovery with photo: {selected_coin_data['symbol']} (cost: {'1 token' if force_new else 'FREE'})")
+                                return
+                            except Exception as photo_error:
+                                logging.warning(f"Photo send failed: {photo_error}")
+--
+                        try:
+                            await query.message.delete()
+                            await context.bot.send_photo(
+                                chat_id=query.message.chat_id,
+                                photo=image_bytes,
+                                caption=msg,
+                                parse_mode='HTML',
+                                reply_markup=keyboard
+                            )
+                            photo_sent = True
+                            nav_type = "alert" if from_alert else "regular"
+                            logging.info(f"✅ FREE BACK navigation ({nav_type}) with photo: {target_coin_id}")
+                        except Exception as photo_error:
+--
+                    try:
+                        await query.message.delete()
+                        await context.bot.send_photo(
+                            chat_id=query.message.chat_id,
+                            photo=image_bytes,
+                            caption=msg,
+                            parse_mode='HTML',
+                            reply_markup=keyboard
+                        )
+                        photo_sent = True
+                        nav_type = "alert" if from_alert else "regular"
+                        cost_type = "cached" if cached_coin else "basic"
+                        logging.info(f"✅ FREE forward navigation ({nav_type}, {cost_type}) with photo: {target_coin_id}")

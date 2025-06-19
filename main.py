@@ -73,51 +73,80 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
+    
 async def start_bot_only():
     """Start just the bot without background tasks first"""
+    print("🚀 SIMPLE TEST: start_bot_only() function STARTED!")
+    print("🔍 DEBUG: About to call logger.info...")
     logger.info("🚀 Starting ULTRA-FAST FOMO Crypto Bot...")
+    print("🔍 DEBUG: Logger.info called successfully")
     
     # Validate configuration
+    print("🔍 DEBUG: About to validate config...")
     try:
         validate_config()
+        print("🔍 DEBUG: validate_config() completed")
         logger.info("✅ Configuration validated")
+        print("🔍 DEBUG: Config validation logged")
     except Exception as e:
+        print(f"🔍 DEBUG: Config validation failed: {e}")
         logger.error(f"❌ Config validation failed: {e}")
         return None
     
     # Initialize database  
+    print("🔍 DEBUG: About to init database...")
     try:
         init_user_db()
+        print("🔍 DEBUG: init_user_db() completed")
         logger.info("✅ Database initialized")
+        print("🔍 DEBUG: Database init logged")
     except Exception as e:
+        print(f"🔍 DEBUG: Database init failed: {e}")
         logger.error(f"❌ Database init failed: {e}")
         return None
     
     # Build and setup Telegram app
+    print("🔍 DEBUG: About to build Telegram app...")
     try:
         token = os.getenv("TEST_BOT_TOKEN") if os.getenv("TEST_MODE") == "True" else BOT_TOKEN
+        print(f"🔍 DEBUG: Got token: {token[:20]}...")
+        logger.info(f"🔑 Using token: {token[:20]}...")
+        
         app = ApplicationBuilder().token(token).build()
+        print("🔍 DEBUG: ApplicationBuilder completed")
+        logger.info("✅ Telegram app built")
+        
+        print("🔍 DEBUG: About to call setup_handlers...")
         setup_handlers(app)
+        print("🔍 DEBUG: setup_handlers completed")
+        logger.info("✅ setup_handlers completed")
+        
         logger.info("✅ Telegram app built and handlers setup")
+        
     except Exception as e:
+        print(f"🔍 DEBUG: Telegram setup failed: {e}")
         logger.error(f"❌ Telegram setup failed: {e}")
         return None
     
     # Initialize and start bot
+    print("🔍 DEBUG: About to initialize and start bot...")
     try:
         await app.initialize()
+        print("🔍 DEBUG: app.initialize() completed")
         await app.start()
+        print("🔍 DEBUG: app.start() completed")
         logger.info("✅ Telegram bot started successfully")
         
         logger.info(f'✅ Bot is online! Chat ID: {BROADCAST_CHAT_ID}')
         logger.info(f"🔑 Using CoinGecko Pro API: {COINGECKO_API_KEY[:8]}...")
         
+        print("🔍 DEBUG: About to return app...")
         return app
     except Exception as e:
+        print(f"🔍 DEBUG: Bot start failed: {e}")
         logger.error(f"❌ Bot start failed: {e}")
         return None
-
+        
 async def ping_render_service():
     """Keep the service active by making an external request"""
     try:

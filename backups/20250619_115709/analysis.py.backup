@@ -26,122 +26,6 @@ from api_client import (
 )
 
 # =============================================================================
-# ✅ CRITICAL FIX: STABLECOIN DETECTION AND FILTERING
-# =============================================================================
-
-class StablecoinFilter:
-    """
-    ✅ CRITICAL: Detect and handle stablecoins to prevent fake FOMO scores
-    Stablecoins should NEVER have high FOMO scores (like the 95% USDT/USDC in logs)
-    """
-    
-    def __init__(self):
-        # Comprehensive stablecoin detection
-        self.stablecoin_symbols = {
-            'usdt', 'usdc', 'dai', 'busd', 'tusd', 'usdd', 'frax', 'lusd',
-            'usdp', 'gusd', 'susd', 'mimatic', 'ustc', 'ust', 'fei',
-            'tribe', 'mim', 'mai', 'dola', 'ousd', 'cusd', 'husd'
-        }
-        
-        self.stablecoin_names = {
-            'tether', 'usd coin', 'dai stablecoin', 'binance usd', 'trueusd',
-            'decentralized usd', 'frax', 'liquity usd', 'paxos standard',
-            'gemini dollar', 'synthetix usd', 'mimatic', 'terrausd',
-            'fei protocol', 'magic internet money', 'mimatic', 'dola',
-            'origin dollar', 'celo dollar', 'huobi usd'
-        }
-        
-        self.stablecoin_keywords = {
-            'usd', 'dollar', 'stable', 'peg', 'backed'
-        }
-        
-    def is_stablecoin(self, coin_data: Dict) -> Tuple[bool, str]:
-        """
-        ✅ CRITICAL: Detect if coin is a stablecoin
-        Returns (is_stablecoin, reason)
-        """
-        if not coin_data:
-            return False, ""
-            
-        symbol = coin_data.get('symbol', '').lower().strip()
-        name = coin_data.get('name', '').lower().strip()
-        coin_id = coin_data.get('id', '').lower().strip()
-        
-        # Check symbol directly
-        if symbol in self.stablecoin_symbols:
-            return True, f"Symbol '{symbol.upper()}' is a known stablecoin"
-        
-        # Check name directly
-        if name in self.stablecoin_names:
-            return True, f"Name '{name}' is a known stablecoin"
-        
-        # Check coin ID
-        if coin_id in self.stablecoin_symbols:
-            return True, f"Coin ID '{coin_id}' is a known stablecoin"
-        
-        # Check for USD pegged indicators
-        if 'usd' in symbol or 'usd' in name:
-            return True, f"USD indicator detected in '{symbol}' / '{name}'"
-        
-        # Check for stablecoin keywords in name
-        for keyword in self.stablecoin_keywords:
-            if keyword in name:
-                return True, f"Stablecoin keyword '{keyword}' found in name"
-        
-        # Check price stability (around $1)
-        try:
-            price = float(coin_data.get('price', 0) or 0)
-            if 0.95 <= price <= 1.05:
-                # Additional check for volume/market cap to confirm it's a real stablecoin
-                market_cap = float(coin_data.get('market_cap', 0) or 0)
-                if market_cap > 1_000_000_000:  # >$1B market cap around $1 = likely stablecoin
-                    return True, f"Price ${price:.3f} + large market cap indicates stablecoin"
-        except (ValueError, TypeError):
-            pass
-        
-        return False, ""
-    
-    def get_stablecoin_fomo_score(self, coin_data: Dict, is_stablecoin: bool, reason: str) -> Tuple[int, str]:
-        """
-        ✅ CRITICAL: Return appropriate FOMO score for stablecoins
-        Stablecoins should have consistently low FOMO scores
-        """
-        if not is_stablecoin:
-            return None, None
-        
-        symbol = coin_data.get('symbol', 'STABLE').upper()
-        
-        # Stablecoins get low, realistic FOMO scores
-        base_score = 15  # Low baseline
-        
-        # Small variations based on volume (but keep it low)
-        try:
-            volume = float(coin_data.get('volume', 0) or 0)
-            if volume > 1_000_000_000:  # >$1B volume
-                base_score += 5  # Max 20
-            elif volume > 500_000_000:  # >$500M volume
-                base_score += 3  # Max 18
-            elif volume > 100_000_000:  # >$100M volume
-                base_score += 1  # Max 16
-        except (ValueError, TypeError):
-            pass
-        
-        # Cap at 25% max for any stablecoin
-        fomo_score = min(base_score, 25)
-        
-        # Generate appropriate signal
-        signal_type = f"😴 Stablecoin ({symbol})"
-        
-        logging.info(f"🔒 STABLECOIN DETECTED: {symbol} - FOMO capped at {fomo_score}% (was potentially 95%)")
-        logging.info(f"🔒 Reason: {reason}")
-        
-        return fomo_score, signal_type
-
-# Initialize stablecoin filter
-stablecoin_filter = StablecoinFilter()
-
-
-# =============================================================================
 # 🎯 SECTION 1: RESEARCH-BACKED ENHANCEMENT ENGINE (v2.1)
 # =============================================================================
 
@@ -1583,175 +1467,27 @@ async def calculate_fomo_status_ultra_fast_phase1(coin_data):
 # 🎯 SECTION 9: MAIN INTERFACE FUNCTIONS
 # =============================================================================
 
-async def calculate_fomo_status_ultra_fast_with_stablecoin_protection(coin_data):
-    """
-    ✅ CRITICAL FIX: Enhanced FOMO calculation with stablecoin filtering
-    This prevents the fake 95% FOMO scores for USDT/USDC seen in logs
-    """
-    
-    # ✅ STEP 1: Check for stablecoins FIRST
-    is_stablecoin, stablecoin_reason = stablecoin_filter.is_stablecoin(coin_data)
-    
-    if is_stablecoin:
-        # Return low FOMO score for stablecoins
-        fomo_score, signal_type = stablecoin_filter.get_stablecoin_fomo_score(
-            coin_data, is_stablecoin, stablecoin_reason
-        )
-        
-        # Return consistent format with low values
-        return (
-            fomo_score,                    # Low FOMO score (15-25)
-            signal_type,                   # "😴 Stablecoin (USDT)"
-            "💲 Price Stable",            # Trend status
-            "🔒 Stablecoin",              # Distribution status  
-            1.0                           # Volume spike (minimal)
-        )
-    
-    # ✅ STEP 2: Proceed with normal analysis for non-stablecoins
-    return await calculate_fomo_status_ultra_fast_original(coin_data)
+# MAIN FUNCTION - Use this for production
+calculate_fomo_status_ultra_fast = calculate_fomo_status_ultra_fast_phase1
 
-async def calculate_fomo_status_ultra_fast_original(coin_data):
-    """
-    ✅ PRESERVED: Original FOMO calculation for non-stablecoins
-    This is your existing analysis.py logic - completely unchanged
-    """
+# Alternative interfaces for different use cases:
+# calculate_fomo_status_ultra_fast = calculate_fomo_status_ultra_fast_v21      # Research-backed only
+# calculate_fomo_status_ultra_fast = calculate_fomo_status_ultra_fast_enhanced # v2.2 with new tokens
+# calculate_fomo_status_ultra_fast = calculate_predictive_fomo_score           # v3.0 predictive
+
+# Additional function interfaces for specific needs:
+async def calculate_fomo_status_ultra_fast_predictive(coin_data):
+    """Drop-in replacement for existing function with predictive power"""
+    result = await calculate_predictive_fomo_score(coin_data)
     
-    price_1h_change = coin_data.get('change_1h') or 0
-    price_24h_change = coin_data.get('change_24h') or 0
-    current_volume = coin_data.get('volume') or 0
-    coin_id = coin_data.get('id', '')
-    coin_symbol = coin_data.get('symbol', '').upper()
-    
-    logging.debug(f"Starting FOMO calculation for {coin_id}")
-    
-    try:
-        price_1h_change = float(price_1h_change)
-        price_24h_change = float(price_24h_change)
-    except:
-        price_1h_change = 0
-        price_24h_change = 0
-    
-    # Run analysis in parallel
-    start_time = time.time()
-    
-    tasks = [
-        calculate_volume_spike_ultra_fast_v21(coin_id, current_volume),
-        analyze_momentum_trend_ultra_fast(coin_id, current_volume, price_1h_change, price_24h_change),
-        analyze_exchange_distribution_ultra_fast(coin_id),
-    ]
-    
-    try:
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        volume_spike = results[0] if not isinstance(results[0], Exception) else 1.0
-        trend_result = results[1] if not isinstance(results[1], Exception) else (0, "Unknown")
-        distribution_result = results[2] if not isinstance(results[2], Exception) else (0, "Analysis Failed")
-        
-        trend_score, trend_status = trend_result
-        distribution_score, distribution_status = distribution_result
-        
-    except Exception as e:
-        logging.error(f"Error in parallel analysis: {e}")
-        volume_spike = 1.0
-        trend_score, trend_status = 0, "Error"
-        distribution_score, distribution_status = 0, "Error"
-    
-    elapsed = time.time() - start_time
-    logging.info(f"✅ Analysis complete for {coin_id} in {elapsed:.2f}s")
-    
-    # ORIGINAL FOMO CALCULATION (PRESERVED)
-    fomo_score = 0
-    signal_type = "No Signal"
-    
-    # Base score from volume spike (0-60 points)
-    if volume_spike >= 10.0:
-        fomo_score = 60
-    elif volume_spike >= 5.0:
-        fomo_score = 45 + int((volume_spike - 5.0) * 3)
-    elif volume_spike >= 2.5:
-        fomo_score = 30 + int((volume_spike - 2.5) * 6)
-    elif volume_spike >= 1.5:
-        fomo_score = 15 + int((volume_spike - 1.5) * 15)
-    else:
-        fomo_score = int(volume_spike * 10)
-    
-    # Price movement modifiers
-    abs_24h_change = abs(price_24h_change)
-    
-    if abs_24h_change < 2.0 and volume_spike >= 3.0:
-        fomo_score += 25
-    elif abs_24h_change < 5.0 and volume_spike >= 2.0:
-        fomo_score += 15
-    elif 5.0 <= abs_24h_change <= 15.0:
-        fomo_score += 10
-    elif abs_24h_change > 25.0:
-        fomo_score -= 15
-    elif abs_24h_change > 50.0:
-        fomo_score -= 25
-    
-    # 1-hour momentum bonus/penalty
-    if price_1h_change > 0 and price_24h_change > 0:
-        fomo_score += min(10, int(price_1h_change * 2))
-    elif price_1h_change < -2.0:
-        fomo_score -= min(15, int(abs(price_1h_change) * 2))
-    elif price_1h_change < 0 and price_24h_change > 0:
-        fomo_score += 1
-    
-    # Volume size bonus/penalty
-    if current_volume > 10_000_000:
-        fomo_score += 5
-    elif current_volume > 5_000_000:
-        fomo_score += 3
-    elif current_volume > 1_000_000:
-        fomo_score += 1
-    elif current_volume < 100_000:
-        fomo_score -= 20
-    elif current_volume < 500_000:
-        fomo_score -= 10
-    
-    # High price coin penalty
-    coin_price = coin_data.get('price', 0) or 0
-    try:
-        coin_price = float(coin_price)
-        if coin_price > 1000 and current_volume < 1_000_000:
-            fomo_score -= 25
-        elif coin_price > 100 and current_volume < 500_000:
-            fomo_score -= 15
-    except:
-        pass
-    
-    # Add trend and distribution scores
-    fomo_score += trend_score
-    fomo_score += distribution_score
-    
-    # Ensure score stays within range
-    fomo_score = max(0, min(100, fomo_score))
-    
-    # Determine signal type
-    if fomo_score >= 90 and abs_24h_change < 5.0:
-        signal_type = "🎯 Stealth Accumulation"
-    elif fomo_score >= 85:
-        signal_type = "🚀 HIGH CONVICTION"
-    elif fomo_score >= 75:
-        signal_type = "⚡ Early Momentum"
-    elif fomo_score >= 60:
-        signal_type = "🟡 Volume Building"
-    elif fomo_score >= 40 and abs_24h_change > 20.0:
-        signal_type = "🚨 Already Pumping"
-    elif fomo_score >= 35:
-        signal_type = "📈 Moderate Activity"
-    elif fomo_score >= 20:
-        signal_type = "👀 Watch List"
-    else:
-        signal_type = "😴 Low Activity"
-    
-    # Override with trend status if very strong
-    if "🚀 Accelerating" in trend_status and fomo_score >= 60:
-        signal_type = "🚀 Accelerating Breakout"
-    elif "🔻 Losing Steam" in trend_status:
-        signal_type = "🔻 Losing Steam"
-    
-    return fomo_score, signal_type, trend_status, distribution_status, volume_spike
+    # Return in original tuple format
+    return (
+        result['combined_score'],
+        result['enhanced_signal'],
+        result['trend_status'],
+        result['distribution_status'],
+        result['volume_spike']
+    )
 
 # =============================================================================
 # 🧪 SECTION 10: TESTING AND VALIDATION
@@ -2449,10 +2185,3 @@ if __name__ == "__main__":
     print("🧪 Starting Phase 1 Test...")
     import asyncio
     asyncio.run(test_derive_scenario())
-
-# =============================================================================
-# ✅ MAIN INTERFACE: Replace the original function  
-# =============================================================================
-
-# ✅ CRITICAL: Replace the main function with stablecoin protection
-calculate_fomo_status_ultra_fast = calculate_fomo_status_ultra_fast_with_stablecoin_protection

@@ -13,12 +13,10 @@ import asyncio
 import time 
 from datetime import datetime 
 from io import BytesIO
-from signal_rewards import evaluate_scan_reward, build_signal_rewards_lookup
-
 
 from telegram import Update, LabeledPrice, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, PreCheckoutQueryHandler, filters
-from telegram.error import TelegramError, BadRequest  # ← NEW IMPORT
+from telegram.error import TelegramError
 
 # Database imports
 from database import (
@@ -37,7 +35,7 @@ from formatters import get_balanced_bottom_line
 
 # Core imports
 from config import FCB_STAR_PACKAGES, INSTANT_RESPONSES, INSTANT_SPIN_RESPONSES, FOMO_CACHE
-from pro_api_client import get_coin_info_ultra_fast_pro as get_coin_info_ultra_fast, get_optimized_session
+from api_client import get_coin_info_ultra_fast, get_optimized_session
 from analysis import calculate_fomo_status_ultra_fast
 
 # Formatter imports
@@ -63,230 +61,6 @@ from gamified_discovery import (
 # Additional imports
 from cache import get_ultra_fast_fomo_opportunities
 from scanner import add_user_to_notifications, subscribed_users, save_subscriptions
-
-# =============================================================================
-# 🎰 ULTRA-FAST CASINO LOOKUP TABLES (O(1) Performance)
-# =============================================================================
-
-CASINO_LOOKUP = {}
-
-def initialize_casino_lookup():
-    """Initialize ultra-fast casino lookup tables"""
-    global CASINO_LOOKUP
-    
-    CASINO_LOOKUP = {
-        'tier_lookup': {},
-        'probability_lookup': {},
-        'token_range_lookup': {},
-        'win_messages': {
-            'legendary': ['🏆 LEGENDARY!', '👑 JACKPOT!', '💎 MEGA WIN!'],
-            'epic': ['🔥 EPIC WIN!', '⚡ BIG WIN!', '🚀 MAJOR!'],
-            'rare': ['🎯 RARE WIN!', '✨ NICE!', '💰 WIN!'],
-            'good': ['🎉 WIN!', '💎 BONUS!', '🎊 LUCKY!'],
-            'default': ['🤖 BONUS!', '💫 WIN!', '🎁 TOKENS!']
-        },
-        'cached_rolls': [random.random() for _ in range(10000)],
-        'roll_index': 0
-    }
-    
-    # Pre-calculate for all FOMO scores (0-100)
-    for fomo in range(0, 101):
-        if fomo >= 90:
-            tier = 'legendary'
-            probability = 0.25  # 25% chance for 90%+ FOMO
-            token_range = (50, 100)
-        elif fomo >= 80:
-            tier = 'epic'
-            probability = 0.15  # 15% chance for 80-89% FOMO
-            token_range = (25, 75)
-        elif fomo >= 70:
-            tier = 'rare'
-            probability = 0.08  # 8% chance for 70-79% FOMO
-            token_range = (15, 45)
-        elif fomo >= 60:
-            tier = 'good'
-            probability = 0.04  # 4% chance for 60-69% FOMO
-            token_range = (10, 30)
-        else:
-            tier = 'default'
-            probability = 0.02  # 2% chance for <60% FOMO
-            token_range = (5, 20)
-        
-        CASINO_LOOKUP['tier_lookup'][fomo] = tier
-        CASINO_LOOKUP['probability_lookup'][fomo] = probability
-        CASINO_LOOKUP['token_range_lookup'][fomo] = token_range
-    
-    logging.info("🎰 Casino lookup tables initialized")
-
-# Initialize on import
-initialize_casino_lookup()
-
-def get_cached_random():
-    """Get pre-generated random number for instant casino rolls"""
-    global CASINO_LOOKUP
-    index = CASINO_LOOKUP['roll_index']
-    CASINO_LOOKUP['roll_index'] = (index + 1) % 10000
-    return CASINO_LOOKUP['cached_rolls'][index]
-
-def instant_casino_check(fomo_score: int) -> tuple:
-    """
-    ✅ ULTRA-FAST: Instant O(1) casino calculation
-    Returns: (is_winner: bool, tokens_won: int, tier: str)
-    """
-    global CASINO_LOOKUP
-    
-    # Lookup tier, probability, token range (all O(1))
-    tier = CASINO_LOOKUP['tier_lookup'].get(fomo_score, 'default')
-    probability = CASINO_LOOKUP['probability_lookup'].get(fomo_score, 0.02)
-    
-    # Get cached random number (O(1))
-    random_roll = get_cached_random()
-    
-    # Check win (O(1))
-    is_winner = random_roll < probability
-    
-    if is_winner:
-        # Lookup token range and calculate reward (O(1))
-        min_tokens, max_tokens = CASINO_LOOKUP['token_range_lookup'].get(fomo_score, (5, 20))
-        tokens_won = random.randint(min_tokens, max_tokens)
-        return True, tokens_won, tier
-    else:
-        return False, 0, tier
-
-def get_casino_winner_display(user_id: str, tokens_won: int, tier: str) -> str:
-    """Simplified to match ultra-clean format"""
-    balance_info = get_user_balance_info(user_id)
-    total_scans = balance_info['total_free_remaining'] + balance_info['fcb_balance'] + tokens_won
-    
-    # Get tier-appropriate win message
-    tier_messages = CASINO_LOOKUP['win_messages'].get(tier, CASINO_LOOKUP['win_messages']['default'])
-    win_message = random.choice(tier_messages)
-    
-    return f"🤖 {total_scans} (TKN) | {win_message} +{tokens_won}"
-
-async def award_casino_tokens_background(user_id: str, tokens_won: int):
-    """Award tokens without blocking main flow - runs in background"""
-    try:
-        success, new_balance = add_fcb_tokens(user_id, tokens_won)
-        if success:
-            logging.info(f"🎰 AWARDED: {tokens_won} tokens to user {user_id} | New balance: {new_balance}")
-        else:
-            logging.error(f"🎰 FAILED: Could not award {tokens_won} tokens to user {user_id}")
-    except Exception as e:
-        logging.error(f"🎰 BACKGROUND ERROR: {e}")
-
-def format_ultra_clean_winner(coin_data, fomo_score, tokens_won, user_id):
-    """Ultra-clean winner display matching the exact format in the image"""
-    # First line: Coin name and symbol
-    coin_line = f"🚀 {coin_data['name']} ({coin_data['symbol']})"
-    
-    # Second line: FOMO score and token bonus
-    fomo_line = f"🎯 FOMO: {fomo_score}% | 🤖+{tokens_won}"
-    
-    # Third line: Total token balance
-    balance_info = get_user_balance_info(user_id)
-    total_scans = balance_info['total_free_remaining'] + balance_info['fcb_balance'] + tokens_won
-    balance_line = f"🤖 {total_scans} (TKN)"
-    
-    return f"{coin_line}\n{fomo_line}"
-
-# =============================================================================
-# 🔐 ADMIN CHEAT CODE SYSTEM
-# =============================================================================
-
-# Admin user IDs from ENV - these users can use token cheat codes
-ADMIN_USER_IDS = [7738783037, 7825269438]  # Your admin IDs
-
-async def handle_admin_token_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    🔐 ADMIN ONLY: Handle token_X commands for adding free tokens
-    Usage: token_100, token_500, token_1000
-    """
-    user_id = update.effective_user.id
-    query = update.message.text.strip().lower()
-    
-    # Silent check - only admins can use this
-    if user_id not in ADMIN_USER_IDS:
-        return  # Silent failure - no response to prevent discovery
-    
-    # Parse token command
-    if query.startswith('token_'):
-        try:
-            # Extract number after token_
-            token_amount = int(query.split('_')[1])
-            
-            # Security: Limit max tokens to prevent abuse
-            if token_amount > 10000:
-                await update.message.reply_text("🔐 <b>Admin:</b> Max 10,000 tokens per command", parse_mode='HTML')
-                return
-            
-            # Add tokens to admin account
-            success, new_balance = add_fcb_tokens(user_id, token_amount)
-            
-            if success:
-                # Success message only visible to admin
-                admin_msg = f"""🔐 <b>Admin Cheat Activated</b>
-
-✅ <b>Added:</b> {token_amount} tokens
-💎 <b>New Balance:</b> {new_balance} tokens
-👤 <b>Admin ID:</b> {user_id}
-
-🔒 <i>This action is logged for audit purposes</i>"""
-                
-                await update.message.reply_text(admin_msg, parse_mode='HTML')
-                
-                # Audit log
-                logging.info(f"🔐 ADMIN CHEAT: User {user_id} added {token_amount} tokens (new balance: {new_balance})")
-            else:
-                await update.message.reply_text("🔐 <b>Admin:</b> ❌ Database error", parse_mode='HTML')
-                
-        except (ValueError, IndexError):
-            await update.message.reply_text("🔐 <b>Admin:</b> Invalid format. Use: token_100", parse_mode='HTML')
-
-# =============================================================================
-# ✅ CRITICAL FIX 1: CALLBACK TIMEOUT PROTECTION
-# =============================================================================
-
-# Global callback cooldown tracking
-last_callback_time = {}
-CALLBACK_COOLDOWN = 1.0  # 1 second between callbacks
-
-async def safe_answer_callback(query, text="Processing..."):
-    """
-    ✅ CRITICAL FIX: Safely answer callback queries with timeout protection
-    This prevents the "Query is too old and response timeout expired" errors
-    """
-    try:
-        await query.answer(text=text)
-        logging.debug(f"✅ Callback answered successfully for user {query.from_user.id}")
-        return True
-    except BadRequest as e:
-        error_msg = str(e).lower()
-        if "too old" in error_msg or "timeout" in error_msg or "invalid" in error_msg:
-            logging.warning(f"⚠️ Callback timeout for user {query.from_user.id}: {e}")
-            return False  # Don't crash, just skip
-        else:
-            logging.error(f"❌ Callback BadRequest for user {query.from_user.id}: {e}")
-            raise  # Re-raise other BadRequest errors
-    except Exception as e:
-        logging.error(f"❌ Callback answer failed for user {query.from_user.id}: {e}")
-        return False
-
-def check_callback_cooldown(user_id):
-    """
-    ✅ CRITICAL FIX: Rate limiting for callback queries
-    Prevents users from spamming buttons and causing timeouts
-    """
-    current_time = time.time()
-    
-    if user_id in last_callback_time:
-        time_since_last = current_time - last_callback_time[user_id]
-        if time_since_last < CALLBACK_COOLDOWN:
-            remaining = CALLBACK_COOLDOWN - time_since_last
-            return False, remaining
-    
-    last_callback_time[user_id] = current_time
-    return True, 0
 
 # =============================================================================
 # ✅ SIMPLE IMAGE HANDLING - ONLY THING CHANGED
@@ -612,80 +386,6 @@ def hunt_next_opportunity(cached_coins, user_id=None, is_free_scan=False):
     # Return in the same format as before for compatibility
     return selected_coin, excitement_message
 
-from signal_rewards import build_signal_rewards_lookup, evaluate_scan_reward
-
-async def handle_next_scan_with_casino(user_id: str, opportunities: list):
-    """Modified to use ultra-clean winner format"""
-    try:
-        logging.info(f"🎰 Signal scan for user {user_id} with {len(opportunities)} opportunities")
-
-        if not opportunities:
-            return {"error": "No opportunities available"}
-
-        # Build rewards lookup from sorted opportunities
-        sorted_opportunities = sorted(
-            opportunities,
-            key=lambda x: x.get('fomo_score', 0),
-            reverse=True
-        )
-        SIGNAL_REWARDS_LOOKUP = build_signal_rewards_lookup(sorted_opportunities)
-
-        selected_opportunity = random.choice(sorted_opportunities)
-
-        coin_data = {
-            'id': selected_opportunity.get('coin', selected_opportunity.get('id', 'unknown')),
-            'name': selected_opportunity.get('name', 'Unknown'),
-            'symbol': selected_opportunity.get('symbol', ''),
-            'logo': selected_opportunity.get('logo') or selected_opportunity.get('image'),
-            'price': selected_opportunity.get('current_price', selected_opportunity.get('price', 0)),
-            'change_1h': selected_opportunity.get('price_1h_change (%)', selected_opportunity.get('change_1h', 0)),
-            'change_24h': selected_opportunity.get('price_24h_change (%)', selected_opportunity.get('change_24h', 0)),
-            'volume': selected_opportunity.get('volume_24h', selected_opportunity.get('volume', 0))
-        }
-
-        fomo_score = selected_opportunity.get('fomo_score', 75)
-        signal_type = selected_opportunity.get('signal_type', '🚀 BREAKOUT')
-
-        # Determine token reward
-        is_winner, tokens_won, tier = evaluate_scan_reward(
-            fomo_score=fomo_score,
-            coin_id=coin_data['id'],
-            lookup=SIGNAL_REWARDS_LOOKUP
-        )
-
-        logging.info(
-            f"🎯 {coin_data['symbol']} | FOMO: {fomo_score}% | Tier: {tier} | "
-            f"Winner: {is_winner} | Tokens: {tokens_won}"
-        )
-
-        if is_winner and tokens_won > 0:
-            display_element1 = format_ultra_clean_winner(
-                coin_data, fomo_score, tokens_won, user_id
-            )
-            asyncio.create_task(award_casino_tokens_background(user_id, tokens_won))
-        else:
-            display_element1 = format_simple_message(
-                coin_data, fomo_score, signal_type,
-                2.5, "Bullish", "Balanced", is_broadcast=False
-            )
-
-        display_element2 = get_balanced_bottom_line(coin_data, user_id)
-
-        return {
-            'success': True,
-            'display_element1': display_element1,
-            'display_element2': display_element2,
-            'tokens_won': tokens_won if is_winner else 0,
-            'coin_data': coin_data,
-            'is_casino_winner': is_winner,
-            'casino_tier': tier
-        }
-
-    except Exception as e:
-        logging.error(f"🎰 SIGNAL REWARD ERROR: {e}")
-        return {"error": str(e)}
-
-
 # =============================================================================
 # Validation and Safety Functions
 # =============================================================================
@@ -720,27 +420,18 @@ def validate_coingecko_id(coin_id):
 # Balance Display Helpers
 # =============================================================================
 
-def format_token_display(token_count: int) -> str:
-    return f"🤖 {token_count} (TKN)"
-
-def format_winning_display(fomo_score: int, bonus_tokens: int = 0) -> str:
-    if bonus_tokens > 0:
-        return f"🚀 FOMO: {fomo_score}% | 🤖+{bonus_tokens}"
-    else:
-        return f"🚀 FOMO: {fomo_score}%"
-
 def get_clean_balance_display(user_id):
     """
     Get simple, clean balance display
-    Returns "🤖 52 (TKN)" - for perfect theming consistency
+    Returns "🤖 Tokens: X" - for perfect theming consistency
     """
     try:
         fcb_balance, _, _, total_free_remaining, _ = get_user_balance(user_id)
         total_scans = total_free_remaining + fcb_balance
-        return f"🤖 <i>{total_scans} (TKN)</i>"
+        return f"🤖 <i>Tokens: {total_scans}</i>"
     except Exception as e:
         logging.error(f"Error getting clean balance: {e}")
-        return "🤖 <i>Error (TKN)</i>"
+        return "🤖 <i>Tokens: Error</i>"
 
 def get_user_balance_info(user_id):
     """Get complete user balance info for internal use (not display)"""
@@ -1677,21 +1368,17 @@ async def handle_instant_discovery(query, context, user_id, force_new=True):
     else:
         logging.info(f"🆓 Free navigation attempted: User {user_id}")
     
-    # ✅ CRYPTO-THEMED: Gamified loading messages (NO 🎰)
-    crypto_discovery_messages = [
-        "🔍 <b>Scanning for gems...</b>",
-        "⚡ <b>Hunting for opportunities...</b>", 
+    # 🎰 GAMIFIED LOADING MESSAGES - Build anticipation
+    gamified_loading_messages = [
+        "🎰 <b>Scanning for gems...</b>",
+        "🔍 <b>Hunting for opportunities...</b>", 
         "💎 <b>Searching for diamonds...</b>",
         "🚀 <b>Finding your next moonshot...</b>",
-        "🎯 <b>Targeting high-value coins...</b>",
-        "🔥 <b>Discovering breakout signals...</b>",
-        "⭐ <b>Seeking stellar opportunities...</b>",
-        "💰 <b>Locating profit potential...</b>",
-        "🌟 <b>Identifying rising stars...</b>",
-        "✨ <b>Detecting market magic...</b>"
+        "⚡ <b>Discovering hidden potential...</b>",
+        "🎯 <b>Targeting high-value coins...</b>"
     ]
     
-    await safe_edit_message(query, text=random.choice(crypto_discovery_messages))
+    await safe_edit_message(query, text=random.choice(gamified_loading_messages))
     
     try:
         # Get cached opportunities
@@ -1864,11 +1551,6 @@ async def send_coin_message_ultra_fast(update: Update, context: ContextTypes.DEF
     
     user_id = update.effective_user.id
     query = update.message.text.strip()
-
-    # 🔐 ADMIN CHEAT CODE CHECK (before any other processing)
-    if query.lower().startswith('token_') and user_id in ADMIN_USER_IDS:
-        await handle_admin_token_command(update, context)
-        return
     
     logging.info(f"🔍 Analysis request: User {user_id} -> '{query}'")
     
@@ -2353,46 +2035,31 @@ async def handle_back_navigation(query, context, user_id):
 async def handle_next_navigation(query, context, user_id):
     """
     Handle NEXT button with smart token economics
-    - Forward through existing history = FREE (cached data)  
+    - Forward through existing history = FREE (cached data)
     - New coin discovery = COSTS 1 TOKEN (fresh API call)
-    
-    🔧 FIXED VERSION: Now shows exact error location
     """
-    print(f"🔥 NEXT BUTTON HIT BY USER {user_id}")
-    logging.info(f"🔥 NEXT BUTTON HIT BY USER {user_id}")
+    
+    logging.info(f"🔍 NEXT DEBUG: User {user_id} clicked next")
     
     try:
-        print(f"🔧 DEBUG: About to get user session")
         # Get user session with alert context
         session = get_user_session(user_id)
-        print(f"🔧 DEBUG: Got session successfully: {session}")
-        
-        print(f"🔧 DEBUG: About to get from_alert")
         from_alert = session.get('from_alert', False)
-        print(f"🔧 DEBUG: Got from_alert: {from_alert}")
-        
-        print(f"🔧 DEBUG: About to call debug_user_session")
         debug_user_session(user_id, "next button clicked")
-        print(f"🔧 DEBUG: Debug session complete")
         
-        print(f"🔧 DEBUG: About to check history")
         # Check if user has history and current position
         history = session.get('history', [])
         current_index = session.get('index', 0)
-        print(f"🔧 DEBUG: History length: {len(history)}, Current index: {current_index}")
         
         # Check if user can move FORWARD through existing history (FREE)
         if history and current_index < len(history) - 1:
-            print(f"🔧 DEBUG: Can move forward in history - should be FREE")
             # We have forward history - this should be FREE
             target_coin_id = history[current_index + 1]
             
             if not validate_coingecko_id(target_coin_id):
-                print(f"🔧 DEBUG: Invalid coin ID in forward history: {target_coin_id}")
                 logging.warning(f"🔍 NEXT DEBUG: Invalid coin ID in forward history: {target_coin_id}, falling back to new coin discovery")
                 # Fall through to new coin discovery instead of showing error
             else:
-                print(f"🔧 DEBUG: Valid coin ID, proceeding with free forward navigation")
                 # FREE forward navigation through existing history
                 nav_type = "alert" if from_alert else "regular"
                 logging.info(f"➡️ User {user_id}: FREE forward navigation ({nav_type}) to {target_coin_id}")
@@ -2407,191 +2074,59 @@ async def handle_next_navigation(query, context, user_id):
                 cached_coin = get_cached_coin_data(user_id, target_coin_id)
                 
                 if cached_coin:
-                    print(f"🔧 DEBUG: Using cached data for forward navigation")
                     # Use cached data - completely FREE
                     success = await display_coin_from_history_forward(query, context, user_id, target_coin_id, cached_coin, from_alert)
                 else:
-                    print(f"🔧 DEBUG: No cached data, trying basic lookup")
                     # Try basic lookup for forward navigation (still try to keep it free)
                     success = await display_coin_from_history_forward(query, context, user_id, target_coin_id, None, from_alert)
                 
                 if success:
-                    print(f"🔧 DEBUG: Forward navigation successful")
                     logging.info(f"✅ FREE NEXT forward navigation complete: {target_coin_id} (position {new_index + 1}/{len(history)})")
                     return
                 else:
-                    print(f"🔧 DEBUG: Forward navigation failed, falling back to new discovery")
                     # If forward navigation failed, fall through to new coin discovery
                     logging.warning(f"🔍 NEXT DEBUG: Forward navigation failed, falling back to new coin discovery")
         
-        print(f"🔧 DEBUG: At end of history or no history, starting casino discovery")
-        # 🎰 CASINO DISCOVERY: User is at end of history or no history - COSTS 1 TOKEN
-        logging.info(f"🎰 CASINO DEBUG: At end of history or no history, finding new coin with casino rewards")
+        # NEW COIN DISCOVERY: User is at end of history or no history - COSTS 1 TOKEN
+        logging.info(f"🔍 NEXT DEBUG: At end of history or no history, finding new coin (will cost 1 token)")
         
-        print(f"🔧 DEBUG: Checking user balance")
         # Check if they have scans available for NEW discoveries
         fcb_balance, _, _, total_free_remaining, _ = get_user_balance(user_id)
         has_scans = total_free_remaining > 0 or fcb_balance > 0
-        print(f"🔧 DEBUG: Balance check - FCB: {fcb_balance}, Free: {total_free_remaining}, Has scans: {has_scans}")
         
         if not has_scans:
-            print(f"🔧 DEBUG: No scans available, showing upgrade message")
             # Show upgrade message for new discoveries
             message = format_out_of_scans_message("new coin")
             keyboard = build_out_of_scans_keyboard()
             await safe_edit_message(query, text=message, reply_markup=keyboard)
             return
         
-        print(f"🔧 DEBUG: About to spend token")
-        # Spend token for new discovery
-        success, spend_message = spend_fcb_token(user_id)
-        if not success:
-            print(f"🔧 DEBUG: Token spend failed: {spend_message}")
-            await safe_edit_message(query, text=spend_message)
-            return
-        
-        print(f"🔧 DEBUG: Token spent successfully")
-        logging.info(f"🪙 Token spent for NEXT discovery: User {user_id}")
-        
-        print(f"🔧 DEBUG: Creating discovery message")
-        # ✅ CRYPTO-THEMED: Random crypto icons (not 🎰)
-        crypto_icons = ["🔍", "⚡", "🚀", "💎", "🎯", "🔥", "⭐", "💰", "🌟", "✨"]
-        random_icon = random.choice(crypto_icons)
-
-        # ✅ CRYPTO-THEMED: Scanning messages with variety
-        crypto_scanning_messages = [
-            f"{random_icon} <b>Scanning for opportunities...</b>",
-            f"{random_icon} <b>Finding your next gem...</b>", 
-            f"{random_icon} <b>Hunting for moonshots...</b>",
-            f"{random_icon} <b>Discovering hidden potential...</b>",
-            f"{random_icon} <b>Targeting high-value coins...</b>",
-            f"{random_icon} <b>Seeking breakthrough opportunities...</b>",
-            f"{random_icon} <b>Analyzing market momentum...</b>",
-            f"{random_icon} <b>Detecting bullish signals...</b>",
-            f"{random_icon} <b>Searching for alpha...</b>",
-            f"{random_icon} <b>Finding explosive setups...</b>"
-        ]
-        
-        discovery_msg = random.choice(crypto_scanning_messages)
-        print(f"🔧 DEBUG: Sending discovery message: {discovery_msg}")
+        # Proceed with new coin discovery (COSTS 1 TOKEN)
+        discovery_msg = "🔍 <b>Finding new opportunities... (1 token will be spent)</b>"
         await safe_edit_message(query, text=discovery_msg)
-
-        print(f"🔧 DEBUG: Getting opportunities for casino")
-        # Get opportunities for casino
+        
+        # Use enhanced discovery with proper token spending
+        await handle_instant_discovery(query, context, user_id, force_new=True)  # This costs 1 token
+        
+    except Exception as e:
+        logging.error(f"❌ CRITICAL ERROR in next navigation: {e}", exc_info=True)
         try:
-            from cache import get_ultra_fast_fomo_opportunities
-            print(f"🔧 DEBUG: Imported cache function successfully")
-            opportunities = await get_ultra_fast_fomo_opportunities()
-            print(f"🔧 DEBUG: Got {len(opportunities) if opportunities else 0} opportunities from cache")
-            if not opportunities:
-                print(f"🔧 DEBUG: Cache empty, trying Pro API fallback")
-                # Fallback to Pro API if cache empty
-                from pro_api_client import get_ultra_fast_fomo_opportunities_pro
-                opportunities = await get_ultra_fast_fomo_opportunities_pro()
-                print(f"🔧 DEBUG: Got {len(opportunities) if opportunities else 0} opportunities from Pro API")
-        except Exception as opp_error:
-            print(f"🔧 DEBUG: Error getting opportunities: {opp_error}")
-            logging.error(f"Error getting opportunities for casino: {opp_error}")
-            opportunities = []
-
-        if not opportunities:
-            print(f"🔧 DEBUG: No opportunities found")
-            await safe_edit_message(query, text="❌ No opportunities found right now. Try again!")
-            return
-
-        print(f"🔧 DEBUG: About to call casino function")
-        # 🎰 USE CASINO FOR NEXT SCAN
-        casino_result = await handle_next_scan_with_casino(user_id, opportunities)
-        print(f"🔧 DEBUG: Casino function returned: {type(casino_result)}")
-
-        if casino_result.get("error"):
-            print(f"🔧 DEBUG: Casino returned error: {casino_result.get('error')}")
-            await safe_edit_message(query, text="❌ Service temporarily unavailable. Please try again.")
-            return
-
-        print(f"🔧 DEBUG: Casino successful, processing results")
-        # ✅ FIXED: Extract display data from casino result (NO duplicate TKN)
-        element1 = casino_result["display_element1"]  # Contains: coin name + FOMO score
-        element2 = casino_result["display_element2"]  # Contains: token balance (unless it's a win)
-        coin_data = casino_result["coin_data"]
-        print(f"🔧 DEBUG: Got coin data for: {coin_data.get('symbol', 'Unknown')}")
-
-        # ✅ Always include final balance from element2 (element1 no longer includes it)
-        message = f"{element1}\n{element2}"
-
-
-        print(f"🔧 DEBUG: Adding to navigation history")
-        # Add to user navigation history
-        add_to_user_history(user_id, coin_data['id'], coin_data)
-
-        print(f"🔧 DEBUG: Building keyboard")
-        # Build keyboard for continued navigation
-        current_balance = get_user_balance_info(user_id)
-        keyboard = build_addictive_buttons(coin_data, current_balance)
-
-        print(f"🔧 DEBUG: Displaying result")
-        # Display result with image if available
-        logo_url = coin_data.get('logo')
-        photo_sent = False
-
-        if logo_url:
-            print(f"🔧 DEBUG: Trying to send image: {logo_url}")
+            # Context-aware error message
+            session = get_user_session(user_id)
+            from_alert = session.get('from_alert', False)
+            
+            if from_alert:
+                error_msg = "❌ Error finding next coin. Try typing a coin name to search directly."
+            else:
+                error_msg = "❌ Error finding next coin. Please try again."
+                
+            await safe_edit_message(query, text=error_msg)
+        except Exception as fallback_error:
+            logging.error(f"❌ Even fallback message failed: {fallback_error}")
             try:
-                await query.message.delete()
-                photo_sent = await fetch_and_send_coin_image(
-                    context=context,
-                    chat_id=query.message.chat_id,
-                    logo_url=logo_url,
-                    caption=message,  # ✅ CLEAN: Only element1 + element2
-                    reply_markup=keyboard
-                )
-                print(f"🔧 DEBUG: Image send result: {photo_sent}")
-            except Exception as img_error:
-                print(f"🔧 DEBUG: Image send failed: {img_error}")
-                logging.warning(f"Image display failed in casino: {img_error}")
-
-        # Fallback to text if photo fails
-        if not photo_sent:
-            print(f"🔧 DEBUG: Using text fallback")
-            await safe_edit_message(query, text=message, reply_markup=keyboard)
-
-        print(f"🔧 DEBUG: Casino NEXT complete!")
-        logging.info(f"🎰 Casino NEXT complete for user {user_id}: {coin_data.get('symbol')} (ultra-fast)")
-        
-    except Exception as e:
-        # ✅ CRITICAL FIX: Show the actual error immediately with full details
-        print(f"🚨 NEXT BUTTON ERROR: {type(e).__name__}: {str(e)}")
-        logging.error(f"🚨 NEXT BUTTON ERROR: {type(e).__name__}: {str(e)}")
-        
-        # Get full traceback
-        import traceback
-        full_traceback = traceback.format_exc()
-        print(f"🚨 FULL TRACEBACK:\n{full_traceback}")
-        logging.error(f"🚨 FULL TRACEBACK:\n{full_traceback}")
-        
-        # Show user the actual error (temporarily for debugging)
-        try:
-            await safe_edit_message(query, text=f"🚨 DEBUG ERROR: {type(e).__name__}: {str(e)}\n\nCheck console for full details.")
-        except Exception as msg_error:
-            print(f"🚨 Could not even send error message: {msg_error}")
-        
-        return            
-
-async def handle_next_navigation_debug(query, context, user_id):
-    """DEBUG VERSION"""
-    print(f"🔥 DEBUG NEXT BUTTON HIT BY USER {user_id}")
-    logging.info(f"🔥 DEBUG NEXT BUTTON HIT BY USER {user_id}")
-    
-    try:
-        print("🔧 DEBUG: Starting function")
-        await safe_edit_message(query, text="🔧 <b>DEBUG: Function started</b>")
-        print("🔧 DEBUG: Message sent successfully")
-        logging.info("🔧 DEBUG: Basic function execution working")
-        
-    except Exception as e:
-        print(f"🔧 DEBUG: Exception caught: {e}")
-        logging.error(f"🔧 DEBUG: Exception: {e}")
-        await safe_edit_message(query, text=f"🔧 <b>DEBUG ERROR:</b> {str(e)}")
+                await query.answer("Error occurred, please try again")
+            except Exception:
+                pass
 
 async def display_coin_from_history_forward(query, context, user_id, target_coin_id, cached_coin=None, from_alert=False):
     """
@@ -3259,28 +2794,16 @@ async def handle_alert_coin_analysis(user_id, coin_id, context, original_message
 
 async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    ✅ CRITICAL FIXES APPLIED:
-    - Callback timeout protection
-    - Rate limiting with cooldown
-    - Enhanced error handling
-    - All original functionality preserved
+    Enhanced callback handler with perfect token economics
+    - FREE: Navigation through history, buy links, menu actions
+    - 1 TOKEN: Only fresh API calls for new coin discoveries
     """
     query = update.callback_query
+    await query.answer()
+    
     user_id = query.from_user.id
     
     logging.info(f"🔍 CALLBACK DEBUG: User {user_id} clicked '{query.data}'")
-    
-    # ✅ FIX 1: Check callback cooldown first
-    can_proceed, remaining = check_callback_cooldown(user_id)
-    if not can_proceed:
-        await safe_answer_callback(query, f"⏰ Please wait {remaining:.1f}s...")
-        return
-    
-    # ✅ FIX 2: Safe callback answer with timeout protection
-    callback_answered = await safe_answer_callback(query)
-    if not callback_answered:
-        logging.warning(f"⚠️ Callback timeout for user {user_id}, continuing anyway...")
-        # Don't return - continue processing even if answer failed
     
     # =============================================================================
     # ALWAYS FREE ACTIONS (No rate limiting, no token cost)
@@ -3323,10 +2846,10 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
         return
     
     elif query.data == "check_balance":
-        user_balance_info = get_user_balance_info(user_id)
-        fcb_balance = user_balance_info.get('fcb_balance', 0)
-        total_free_remaining = user_balance_info.get('total_free_remaining', 0)
+        user_id = query.from_user.id
+        fcb_balance, free_queries_used, new_user_bonus_used, total_free_remaining, has_received_bonus = get_user_balance(user_id)
         
+        # FIXED: Enhanced balance message with accurate economics
         message = f"""📊 <b>Balance Update</b>
         
 🎯 Scans Available: <b>{total_free_remaining}</b>
@@ -3334,14 +2857,14 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
 
 💰 <b>Token Economics:</b>
 🟢 <b>Always FREE:</b>
-- ⬅️ BACK navigation through history
-- 💰 Buy coin links and information
-- 🤖 TOP UP and menu actions
+• ⬅️ BACK navigation through history
+• 💰 Buy coin links and information
+• 🤖 TOP UP and menu actions
 
 🔴 <b>Costs 1 token:</b>
-- New coin searches (fresh API data)
-- 👉 NEXT discoveries (new coins only)
-- Fresh analysis and market data
+• New coin searches (fresh API data)
+• 👉 NEXT discoveries (new coins only)
+• Fresh analysis and market data
 
 🔥 <b>Alert Benefits:</b>
 ✅ Free navigation from alerts
@@ -3349,10 +2872,11 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
 ⚡ Up to 6 quality alerts daily
 
 💡 <b>Smart Usage:</b>
-- Use alerts to get premium coins for free
-- Navigate history without costs
-- Pay only for fresh discoveries"""
+• Use alerts to get premium coins for free
+• Navigate history without costs
+• Pay only for fresh discoveries"""
         
+        # Add helpful keyboard
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🤖 Get 250 Scans", callback_data="buy_starter")],
             [InlineKeyboardButton("🧪 Test Alerts", callback_data="test_alert_system")],
@@ -3368,6 +2892,7 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
     
     # NEXT button - Smart economics: FREE for history, 1 token for new discoveries
     elif query.data == "next_coin":
+        # Check if this is forward navigation (FREE) or new discovery (1 token)
         session = get_user_session(user_id)
         history = session.get('history', [])
         current_index = session.get('index', 0)

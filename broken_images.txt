@@ -1,0 +1,83 @@
+    # Method 1: Try direct URL sending (simplest approach)
+    try:
+        await context.bot.send_photo(
+            chat_id=chat_id,
+            photo=logo_url,
+            caption=caption,
+            parse_mode='HTML',
+            reply_markup=reply_markup
+        )
+        logging.info(f"✅ Direct URL image sent successfully: {logo_url}")
+        return True
+        
+    except TelegramError as e:
+--
+                
+            if fallback_url and fallback_url != logo_url:
+                await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=fallback_url,
+                    caption=caption,
+                    parse_mode='HTML',
+                    reply_markup=reply_markup
+                )
+                logging.info(f"✅ Fallback URL image sent successfully: {fallback_url}")
+                return True
+        except TelegramError:
+            pass
+--
+        try:
+            default_url = "https://assets.coingecko.com/coins/images/1/thumb/bitcoin.png"
+            await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=default_url,
+                caption=caption,
+                parse_mode='HTML',
+                reply_markup=reply_markup
+            )
+            logging.info("✅ Default Bitcoin logo sent successfully")
+            return True
+        except TelegramError:
+            pass
+--
+    for i, url in enumerate(test_urls):
+        try:
+            await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=url,
+                caption=f"🧪 Test {i+1}: {url.split('/')[-1]}"
+            )
+            logging.info(f"✅ Test {i+1} SUCCESS: {url}")
+            await update.message.reply_text(f"✅ Test {i+1} worked!")
+            
+        except Exception as e:
+            logging.error(f"❌ Test {i+1} FAILED: {url} - {e}")
+            await update.message.reply_text(f"❌ Test {i+1} failed: {str(e)[:100]}")
+--
+                        await query.message.delete()
+                        # FIXED: Use clean_caption for image (NO navigation noise!)
+                        await context.bot.send_photo(
+                            chat_id=query.message.chat_id,
+                            photo=image_bytes,
+                            caption=clean_caption,  # ✅ CLEAN CAPTION ONLY!
+                            parse_mode='HTML',
+                            reply_markup=keyboard
+                        )
+                        photo_sent = True
+                        nav_type = "alert" if from_alert else "regular"
+                        cost_type = "cached" if cached_coin else "basic"
+                        logging.info(f"✅ FREE forward navigation ({nav_type}, {cost_type}) with CLEAN photo: {target_coin_id}")
+--
+                                await query.message.delete()
+                                # Use CLEAN caption for image
+                                await context.bot.send_photo(
+                                    chat_id=query.message.chat_id,
+                                    photo=image_bytes,
+                                    caption=clean_caption,  # ✅ CLEAN CAPTION ONLY!
+                                    parse_mode='HTML',
+                                    reply_markup=keyboard
+                                )
+                                photo_sent = True
+                            except Exception:
+                                pass
+                except Exception:
