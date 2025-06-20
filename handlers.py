@@ -50,7 +50,8 @@ from formatters import (
     build_out_of_scans_back_keyboard, build_out_of_scans_keyboard_with_back,
     build_out_of_scans_back_keyboard_with_navigation, create_countdown_visual,
     get_start_message, get_help_message, convert_fomo_score_to_signal,
-    get_buy_coin_url
+    get_buy_coin_url,
+    build_main_menu_buttons
 )
 
 from gamified_discovery import (
@@ -63,6 +64,13 @@ from gamified_discovery import (
 # Additional imports
 from cache import get_ultra_fast_fomo_opportunities
 from scanner import add_user_to_notifications, subscribed_users, save_subscriptions
+
+async def safe_reply(update, text, parse_mode="HTML"):
+    await update.message.reply_text(
+        text,
+        parse_mode=parse_mode,
+        reply_markup=build_main_menu_buttons()
+    )
 
 # =============================================================================
 # 🎰 ULTRA-FAST CASINO LOOKUP TABLES (O(1) Performance)
@@ -217,7 +225,7 @@ async def handle_admin_token_command(update: Update, context: ContextTypes.DEFAU
             
             # Security: Limit max tokens to prevent abuse
             if token_amount > 10000:
-                await update.message.reply_text("🔐 <b>Admin:</b> Max 10,000 tokens per command", parse_mode='HTML')
+                await update.message.reply_text("🔐 <b>Admin:</b> Max 10,000 tokens per command", parse_mode='HTML', reply_markup=build_main_menu_buttons())
                 return
             
             # Add tokens to admin account
@@ -233,15 +241,15 @@ async def handle_admin_token_command(update: Update, context: ContextTypes.DEFAU
 
 🔒 <i>This action is logged for audit purposes</i>"""
                 
-                await update.message.reply_text(admin_msg, parse_mode='HTML')
+                await update.message.reply_text(admin_msg, parse_mode='HTML', reply_markup=build_main_menu_buttons())
                 
                 # Audit log
                 logging.info(f"🔐 ADMIN CHEAT: User {user_id} added {token_amount} tokens (new balance: {new_balance})")
             else:
-                await update.message.reply_text("🔐 <b>Admin:</b> ❌ Database error", parse_mode='HTML')
+                await update.message.reply_text("🔐 <b>Admin:</b> ❌ Database error", parse_mode='HTML', reply_markup=build_main_menu_buttons())
                 
         except (ValueError, IndexError):
-            await update.message.reply_text("🔐 <b>Admin:</b> Invalid format. Use: token_100", parse_mode='HTML')
+            await update.message.reply_text("🔐 <b>Admin:</b> Invalid format. Use: token_100", parse_mode='HTML', reply_markup=build_main_menu_buttons())
 
 # =============================================================================
 # ✅ CRITICAL FIX 1: CALLBACK TIMEOUT PROTECTION
@@ -910,7 +918,7 @@ By using this bot, you agree to our T&Cs. This is educational/entertainment cont
 
 💡 <b>Get Help:</b> Type /help for full instructions"""
         
-        await update.message.reply_text(message, parse_mode='HTML')
+        await update.message.reply_text(message, parse_mode='HTML', reply_markup=build_main_menu_buttons())
         logging.info(f"✅ START: Successfully sent welcome message to {username}")
         
     except Exception as e:
@@ -979,7 +987,7 @@ We analyze 15+ market indicators and deliver a simple FOMO score that reflects e
         logging.info(f"🔍 HELP DEBUG: About to send help message to {username}")
         
         # Send the help message
-        sent_message = await update.message.reply_text(message, parse_mode='HTML')
+        sent_message = await update.message.reply_text(message, parse_mode='HTML', reply_markup=build_main_menu_buttons())
         
         logging.info(f"✅ HELP SUCCESS: Help message sent to {username} (ID: {user_id})")
         logging.info(f"🔍 HELP DEBUG: Sent message ID: {sent_message.message_id}")
@@ -1058,7 +1066,7 @@ FOMO Crypto Bot, its creators, and affiliates are NOT liable for any financial l
 
 <i>Last updated: 2025</i>"""
         
-        await update.message.reply_text(message, parse_mode='HTML')
+        await update.message.reply_text(message, parse_mode='HTML', reply_markup=build_main_menu_buttons())
         logging.info(f"✅ TERMS: Successfully sent to {username}")
         
     except Exception as e:
@@ -1292,7 +1300,7 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • NEXT finds fresh opportunities (costs 1 token)"""
         
         full_message = base_message + economics_info
-        await update.message.reply_text(full_message, parse_mode='HTML')
+        await update.message.reply_text(full_message, parse_mode='HTML', reply_markup=build_main_menu_buttons())
         logging.info(f"✅ BALANCE: Successfully sent to {username}")
         
     except Exception as e:
@@ -1345,7 +1353,7 @@ async def debug_balance_command(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             message = "❌ Could not retrieve balance information."
         
-        await update.message.reply_text(message, parse_mode='HTML')
+        await update.message.reply_text(message, parse_mode='HTML', reply_markup=build_main_menu_buttons())
         logging.info(f"✅ DEBUG_BALANCE: Successfully sent to {username}")
         
     except Exception as e:
@@ -1472,7 +1480,7 @@ NEXT new coins: 1 token (fresh API call)
     else:
         message = f"🔍 <b>Session Debug</b>\n\nUser {user_id} has no active session."
     
-    await update.message.reply_text(message, parse_mode='HTML')
+    await update.message.reply_text(message, parse_mode='HTML', reply_markup=build_main_menu_buttons())
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show bot status and subscriber count - Enhanced with economics info"""
@@ -1510,7 +1518,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • Pay only for fresh analysis and new discoveries
 • Quality over quantity approach"""
 
-    await update.message.reply_text(status_message, parse_mode='HTML')
+    await update.message.reply_text(status_message, parse_mode='HTML', reply_markup=build_main_menu_buttons())
     logging.info(f"Status command used by {username} (ID: {user_id})")
 
 async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1527,7 +1535,7 @@ async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         logging.info(f"User {username} (ID: {user_id}) unsubscribed from opportunity alerts")
     else:
-        await update.message.reply_text("ℹ️ You are not currently subscribed.", parse_mode='HTML')
+        await update.message.reply_text("ℹ️ You are not currently subscribed.", parse_mode='HTML', reply_markup=build_main_menu_buttons())
 
 async def debug_next_button_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -1637,7 +1645,7 @@ async def debug_next_button_command(update: Update, context: ContextTypes.DEFAUL
     except Exception as e:
         message += f"❌ Diagnosis failed: {e}\n"
     
-    await update.message.reply_text(message, parse_mode='Markdown')
+    await update.message.reply_text(message, parse_mode='Markdown', reply_markup=build_main_menu_buttons())
 
 # =============================================================================
 # Opportunity Discovery & Coin Analysis - ALL ORIGINAL FUNCTIONALITY
@@ -1885,7 +1893,7 @@ async def send_coin_message_ultra_fast(update: Update, context: ContextTypes.DEF
             except Exception as e:
                 logging.error(f"❌ Enhanced out of scans message failed: {e}")
                 # Emergency fallback
-                await update.message.reply_text("💔 <b>Out of scans!</b>\n\nUse /buy to get more scans! 🚀", parse_mode='HTML')
+                await update.message.reply_text("💔 <b>Out of scans!</b>\n\nUse /buy to get more scans! 🚀", parse_mode='HTML', reply_markup=build_main_menu_buttons())
         else:
             try:
                 countdown_msg = create_countdown_visual(time_remaining)
@@ -1900,7 +1908,7 @@ async def send_coin_message_ultra_fast(update: Update, context: ContextTypes.DEF
     # Spend the query token (this is a fresh API call)
     success, spend_message = spend_fcb_token(user_id)
     if not success:
-        await update.message.reply_text(spend_message, parse_mode='HTML')
+        await update.message.reply_text(spend_message, parse_mode='HTML', reply_markup=build_main_menu_buttons())
         return
     
     logging.info(f"🪙 Token spent for fresh coin analysis: User {user_id} -> '{query}'")
@@ -3397,6 +3405,12 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
             # Proceed with new discovery (will cost 1 token)
             await handle_next_navigation(query, context, user_id)
             return
+        
+        # ✅ FIX: Handle "next" callback from start menu (redirect to next_coin)
+    elif query.data == "next":
+        logging.info(f"🔧 REDIRECT: Converting 'next' to 'next_coin' for user {user_id}")
+        await handle_next_navigation(query, context, user_id)
+        return
     
     # =============================================================================
     # UNKNOWN CALLBACK HANDLING
@@ -3543,7 +3557,7 @@ async def payment_success_handler(update: Update, context: ContextTypes.DEFAULT_
 
 💡 <b>Pro Tip:</b> One legendary discovery can pay for thousands of scans!"""
                 
-                await update.message.reply_text(message, parse_mode='HTML')
+                await update.message.reply_text(message, parse_mode='HTML', reply_markup=build_main_menu_buttons())
                 
                 logging.info(f"✅ PAYMENT SUCCESS: User {actual_buyer_id} bought {tokens} FCB tokens for {stars} Stars - New balance: {new_balance} - Premium activated")
             else:
@@ -3826,10 +3840,10 @@ async def debug_psychology_command(update: Update, context: ContextTypes.DEFAULT
             hours_since = stats['time_since_legendary'] / 3600
             message += f"\n🏆 Last Legendary: {hours_since:.1f} hours ago"
         
-        await update.message.reply_text(message, parse_mode='HTML')
+        await update.message.reply_text(message, parse_mode='HTML', reply_markup=build_main_menu_buttons())
         
     except Exception as e:
-        await update.message.reply_text(f"❌ Error getting psychology stats: {e}", parse_mode='HTML')
+        await update.message.reply_text(f"❌ Error getting psychology stats: {e}", parse_mode='HTML', reply_markup=build_main_menu_buttons())
 
 # =============================================================================
 # CRITICAL DEBUGGING HELPERS - ALL ORIGINAL FUNCTIONALITY

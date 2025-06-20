@@ -60,6 +60,13 @@ from telegram.ext import ApplicationBuilder
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pytz import timezone
 import aiohttp
+import asyncio
+from telegram import Bot
+
+async def ping():
+    bot = Bot("YOUR_BOT_TOKEN")
+    me = await bot.get_me()
+    print(me)
 
 # Load environment variables
 load_dotenv()

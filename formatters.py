@@ -86,6 +86,18 @@ def get_buy_coin_url(coin_data):
     
     return tracking_url
 
+def build_main_menu_buttons() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("👈 BACK", callback_data="back"),
+            InlineKeyboardButton("👉 NEXT", callback_data="next")
+        ],
+        [
+            InlineKeyboardButton("💰 BUY COIN", url="https://your-buy-link.com"),
+            InlineKeyboardButton("🤖 TOP UP", callback_data="topup")
+        ]
+    ])
+
 # =============================================================================
 # FOMO EMOJI SYSTEM - TELLS THE COMPLETE STORY
 # =============================================================================
