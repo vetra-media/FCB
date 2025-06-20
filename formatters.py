@@ -87,16 +87,39 @@ def get_buy_coin_url(coin_data):
     return tracking_url
 
 def build_main_menu_buttons() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("👈 BACK", callback_data="back"),
-            InlineKeyboardButton("👉 NEXT", callback_data="next")
-        ],
-        [
-            InlineKeyboardButton("💰 BUY COIN", url="https://your-buy-link.com"),
-            InlineKeyboardButton("🤖 TOP UP", callback_data="topup")
-        ]
-    ])
+    """Main menu buttons with optional shopping list access"""
+    
+    # Check if shopping list is enabled
+    try:
+        from handlers import is_shopping_list_active
+        shopping_enabled = is_shopping_list_active()
+    except ImportError:
+        shopping_enabled = False
+    
+    if shopping_enabled:
+        # Include basket option in menu
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("👉 Start Scanning", callback_data="next_coin"),
+                InlineKeyboardButton("🛒 My Basket", callback_data="show_basket")
+            ],
+            [
+                InlineKeyboardButton("💎 Buy Tokens", callback_data="buy_starter"),
+                InlineKeyboardButton("❓ Help", callback_data="show_help")
+            ]
+        ])
+    else:
+        # Original menu
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("👈 BACK", callback_data="back"),
+                InlineKeyboardButton("👉 NEXT", callback_data="next")
+            ],
+            [
+                InlineKeyboardButton("💰 BUY COIN", url="https://your-buy-link.com"),
+                InlineKeyboardButton("🤖 TOP UP", callback_data="topup")
+            ]
+        ])
 
 # =============================================================================
 # FOMO EMOJI SYSTEM - TELLS THE COMPLETE STORY
@@ -466,38 +489,47 @@ Your choice - don't let opportunities slip away!"""
 # UPDATED KEYBOARD BUILDERS (🤖 TOP UP INSTEAD OF ⭐ TOP UP) - FROM PART 2/2
 # =============================================================================
 
-def build_addictive_buttons(coin, user_balance_info=None):
-    """Create buttons with updated symbols - 🤖 TOP UP for consistent theming"""
-    # If no balance info provided, just show buttons without balance text
-    balance_text = ""
+def build_addictive_buttons(coin_data, user_balance_info=None):
+    """Build navigation buttons with CORRECT shopping list layout - NO BACK BUTTON"""
+    buttons = []
     
-    if user_balance_info:
-        remaining = user_balance_info.get('total_free_remaining', 0)
-        if remaining > 0:
-            balance_text = f" ({remaining} left)"
-        elif user_balance_info.get('fcb_balance', 0) > 0:
-            balance_text = f" ({user_balance_info['fcb_balance']} FCB)"
+    # Import the shopping list function
+    from handlers import is_shopping_list_active
+    
+    # First row - Navigation with shopping list integration
+    if is_shopping_list_active():
+        # ✅ CORRECT SHOPPING LIST MODE: NO BACK BUTTON
+        # Row 1: ➕ ADD 🟡 | 👉 SCAN
+        if user_balance_info:
+            total_scans = user_balance_info.get('total_free_remaining', 0) + user_balance_info.get('fcb_balance', 0)
+            buttons.append([
+                InlineKeyboardButton("➕ ADD 🟡", callback_data="add_coin_current"),
+                InlineKeyboardButton("👉 SCAN", callback_data="next_coin")
+            ])
         else:
-            balance_text = " (0 left)"
+            buttons.append([
+                InlineKeyboardButton("➕ ADD 🟡", callback_data="add_coin_current"),
+                InlineKeyboardButton("👉 SCAN", callback_data="next_coin")
+            ])
+        
+        # Row 2: 🛒 BASKET | ➕ TKN 🤖
+        buttons.append([
+            InlineKeyboardButton("🛒 BASKET", callback_data="show_basket"),
+            InlineKeyboardButton("➕ TKN 🤖", callback_data="buy_starter")
+        ])
+    else:
+        # NORMAL MODE: Original button layout WITH BACK button
+        buttons.append([
+            InlineKeyboardButton("⬅️ BACK", callback_data="back_navigation"),
+            InlineKeyboardButton("👉 NEXT", callback_data="next_coin")
+        ])
+        
+        buttons.append([
+            InlineKeyboardButton("💰 BUY COIN", callback_data="buy_coin"),
+            InlineKeyboardButton("🤖 TOP UP", callback_data="buy_starter")
+        ])
     
-    coin_id = coin.get('id', 'unknown')
-    safe_coin_id = coin_id[:50] if len(coin_id) > 50 else coin_id
-    back_callback = f"back_{safe_coin_id}"
-    next_callback = "next_coin"
-    
-    # Use tracking URL for BUY COIN button
-    buy_coin_url = get_buy_coin_url(coin)
-    
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(f'⬅️ BACK{balance_text}', callback_data=back_callback),
-            InlineKeyboardButton(f'👉 NEXT{balance_text}', callback_data=next_callback)
-        ],
-        [
-            InlineKeyboardButton('💰 BUY COIN', url=buy_coin_url),
-            InlineKeyboardButton('🤖 TOP UP', callback_data='buy_starter')  # UPDATED: 🤖 instead of ⭐
-        ]
-    ])
+    return InlineKeyboardMarkup(buttons)
 
 def build_purchase_keyboard():
     """Build purchase options keyboard"""

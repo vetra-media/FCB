@@ -10,11 +10,11 @@ logging.basicConfig(level=logging.DEBUG)
 import aiohttp
 import random
 import asyncio
-import time 
+import time
+import os 
 from datetime import datetime 
 from io import BytesIO
 from signal_rewards import evaluate_scan_reward, build_signal_rewards_lookup
-
 
 from telegram import Update, LabeledPrice, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, PreCheckoutQueryHandler, filters
@@ -71,6 +71,98 @@ async def safe_reply(update, text, parse_mode="HTML"):
         parse_mode=parse_mode,
         reply_markup=build_main_menu_buttons()
     )
+
+# =============================================================================
+# 🛒 SHOPPING LIST FEATURE - NEW IMPLEMENTATION
+# =============================================================================
+
+def get_cached_coin_data_by_symbol(coin_symbol):
+    """Get cached coin data by symbol for basket display"""
+    try:
+        # Search through all user sessions for this coin symbol
+        for user_id, session in user_sessions.items():
+            cached_data = session.get('cached_data', {})
+            for coin_id, data in cached_data.items():
+                coin_info = data.get('coin_data', {})
+                if coin_info.get('symbol', '').upper() == coin_symbol.upper():
+                    if 'fomo_score' not in coin_info:
+                        coin_info['fomo_score'] = 75  # Default score
+                    return coin_info
+        
+        # Check FOMO_CACHE if available
+        if 'FOMO_CACHE' in globals() and FOMO_CACHE.get('coins'):
+            for coin in FOMO_CACHE['coins']:
+                if coin.get('symbol', '').upper() == coin_symbol.upper():
+                    return coin
+        
+        return None
+    except Exception as e:
+        logging.error(f"Error getting cached coin data by symbol: {e}")
+        return None
+
+class UserShoppingList:
+    """Simple in-memory shopping list for POC phase"""
+    def __init__(self):
+        self.user_lists = {}  # {user_id: [coin_objects]}
+    
+    def add_coin(self, user_id, coin_data):
+        """Add coin to user's shopping list"""
+        if user_id not in self.user_lists:
+            self.user_lists[user_id] = []
+        
+        # Prevent duplicates by checking symbol
+        existing_symbols = [coin.get('symbol', '').upper() for coin in self.user_lists[user_id]]
+        new_symbol = coin_data.get('symbol', '').upper()
+        
+        if new_symbol and new_symbol not in existing_symbols:
+            self.user_lists[user_id].append(coin_data)
+            return True, f"✅ {new_symbol} added to basket!"
+        else:
+            return False, f"✅ {new_symbol} already in basket!"
+    
+    def get_list(self, user_id):
+        """Get user's shopping list"""
+        return self.user_lists.get(user_id, [])
+    
+    def remove_coin(self, user_id, coin_symbol):
+        """Remove coin from shopping list"""
+        if user_id in self.user_lists:
+            original_count = len(self.user_lists[user_id])
+            self.user_lists[user_id] = [
+                coin for coin in self.user_lists[user_id] 
+                if coin.get('symbol', '').upper() != coin_symbol.upper()
+            ]
+            return len(self.user_lists[user_id]) < original_count
+        return False
+    
+    def get_count(self, user_id):
+        """Get count of coins in shopping list"""
+        return len(self.user_lists.get(user_id, []))
+
+# Initialize global shopping list
+shopping_lists = UserShoppingList()
+
+# =============================================================================
+# 🔐 FEATURE FLAG - SAFETY SWITCH
+# =============================================================================
+
+SHOPPING_LIST_ENABLED = True  # Set to True when ready to test
+
+def is_shopping_list_active():
+    """Check if shopping list feature is enabled"""
+    return SHOPPING_LIST_ENABLED
+
+def enable_shopping_list():
+    """Enable shopping list feature"""
+    global SHOPPING_LIST_ENABLED
+    SHOPPING_LIST_ENABLED = True
+    logging.info("🛒 Shopping list feature ENABLED")
+
+def disable_shopping_list():
+    """Disable shopping list feature"""
+    global SHOPPING_LIST_ENABLED
+    SHOPPING_LIST_ENABLED = False
+    logging.info("🛒 Shopping list feature DISABLED")
 
 # =============================================================================
 # 🎰 ULTRA-FAST CASINO LOOKUP TABLES (O(1) Performance)
@@ -1438,6 +1530,30 @@ async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Failed to send test notification. Please try again or contact support.",
             parse_mode='HTML'
         )
+
+async def enable_shopping_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to enable shopping list"""
+    user_id = update.effective_user.id
+    
+    # Only allow specific admin users (add your admin IDs)
+    if user_id not in [7738783037, 7825269438, 8099494549, 1976638270, 8141128105]:
+        await update.message.reply_text("❌ Admin only")
+        return
+    
+    enable_shopping_list()
+    await update.message.reply_text("✅ Shopping list feature ENABLED\n\nButtons changed to:\n➕ ADD 🟡 | 👉 SCAN\n🛒 BASKET | ➕ TKN 🤖")
+
+async def disable_shopping_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to disable shopping list"""
+    user_id = update.effective_user.id
+    
+    # Only allow specific admin users
+    if user_id not in [7738783037, 7825269438, 8099494549, 1976638270, 8141128105]:
+        await update.message.reply_text("❌ Admin only")
+        return
+    
+    disable_shopping_list()
+    await update.message.reply_text("✅ Shopping list feature DISABLED\n\nButtons reverted to:\n⬅️ BACK | 👉 NEXT\n💰 BUY COIN | 🤖 TOP UP")
 
 async def test_images_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """✅ NEW: Debug command to test images directly"""
@@ -2928,6 +3044,176 @@ async def handle_back_to_analysis(query, context, user_id):
         await handle_back_to_main(query, context, user_id)
 
 # =============================================================================
+# 🛒 SHOPPING LIST HANDLERS
+# =============================================================================
+
+async def handle_add_coin(query, context, user_id, coin_symbol):
+    """Handle ADD COIN button press - FIXED VERSION with proper popup"""
+    try:
+        logging.info(f"🛒 ADD COIN: User {user_id} trying to add {coin_symbol}")
+        
+        # Get current coin data from session
+        session = get_user_session(user_id)
+        if not session.get('history'):
+            logging.info(f"🛒 ADD COIN: No history for user {user_id}")
+            await query.answer("❌ No coin to add", show_alert=True)
+            return
+        
+        # Get current coin
+        current_index = session.get('index', 0)
+        if current_index >= len(session['history']):
+            await query.answer("❌ No coin to add", show_alert=True)
+            return
+        
+        coin_id = session['history'][current_index]
+        logging.info(f"🛒 ADD COIN: Current coin ID: {coin_id}")
+        
+        # Try to get cached coin data
+        cached_coin = get_cached_coin_data(user_id, coin_id)
+        if not cached_coin:
+            logging.error(f"🛒 ADD COIN: No cached data for {coin_id}")
+            await query.answer("❌ Coin data not available", show_alert=True)
+            return
+        
+        logging.info(f"🛒 ADD COIN: Found cached coin: {cached_coin.get('symbol', 'Unknown')}")
+        
+        # 🔧 CRITICAL FIX: Ensure FOMO score is current
+        if 'fomo_score' not in cached_coin:
+            try:
+                fomo_result = await calculate_fomo_status_ultra_fast(cached_coin)
+                if isinstance(fomo_result, tuple) and len(fomo_result) >= 1:
+                    cached_coin['fomo_score'] = fomo_result[0]
+                    logging.info(f"🔧 ADD: Calculated fresh FOMO score: {fomo_result[0]}%")
+                else:
+                    cached_coin['fomo_score'] = 50
+            except Exception as fomo_error:
+                logging.error(f"🔧 ADD: FOMO calculation error: {fomo_error}")
+                cached_coin['fomo_score'] = 50
+        
+        # Add to shopping list
+        success, message = shopping_lists.add_coin(user_id, cached_coin)
+        
+        # CRITICAL FIX: Ensure we actually call query.answer with show_alert=True
+        logging.info(f"🛒 ADD COIN: About to show popup: {message}")
+        
+        try:
+            await query.answer(text=message, show_alert=True)
+            logging.info(f"🛒 ADD COIN: Popup sent successfully: {message}")
+        except Exception as popup_error:
+            logging.error(f"🛒 ADD COIN: Popup failed: {popup_error}")
+            # Try without show_alert as fallback
+            try:
+                await query.answer(text=message)
+                logging.info(f"🛒 ADD COIN: Fallback popup sent: {message}")
+            except Exception as fallback_error:
+                logging.error(f"🛒 ADD COIN: All popup methods failed: {fallback_error}")
+        
+        logging.info(f"🛒 User {user_id} added coin {cached_coin.get('symbol', 'Unknown')}: {message}")
+        
+    except Exception as e:
+        logging.error(f"🛒 ADD COIN ERROR: {e}")
+        try:
+            await query.answer("❌ Error adding coin", show_alert=True)
+        except:
+            logging.error(f"🛒 ADD COIN: Could not even send error message")
+
+async def get_fresh_fomo_score_for_basket(coin_data):
+    """Get fresh FOMO score ensuring consistency with scan view"""
+    try:
+        # Use the SAME function as scan view for consistency
+        fomo_result = await calculate_fomo_status_ultra_fast(coin_data)
+        
+        if isinstance(fomo_result, tuple) and len(fomo_result) >= 1:
+            fresh_fomo_score = fomo_result[0]
+            logging.info(f"🔧 BASKET: Fresh FOMO for {coin_data.get('symbol')}: {fresh_fomo_score}%")
+            return fresh_fomo_score
+        else:
+            # Fallback to stored score if calculation fails
+            return coin_data.get('fomo_score', 50)
+            
+    except Exception as e:
+        logging.error(f"🔧 BASKET: FOMO calculation error: {e}")
+        return coin_data.get('fomo_score', 50)  # Safe fallback
+
+async def handle_show_basket(query, context, user_id):
+    """Show user's shopping list with proper coin formatting and affiliate links"""
+    if not is_shopping_list_active():
+        await query.answer("🔒 Shopping list not available")
+        return
+    
+    basket_coins = shopping_lists.get_list(user_id)  # Returns list of coin objects
+    
+    if not basket_coins:
+        message = "🛒 <b>Your Crypto Basket</b>\n\n💡 <i>Tap SCAN to discover coins!</i>\n\n🫙 <i>Your basket is empty</i>"
+        buttons = [
+            [InlineKeyboardButton("👉 SCAN", callback_data="next_coin")],
+            [InlineKeyboardButton("🛒 BASKET", callback_data="show_basket"), 
+             InlineKeyboardButton("➕ TKN 🤖", callback_data="buy_starter")]
+        ]
+    else:
+        message = "🛒 <b>Your Crypto Basket</b>\n\n💡 <i>Tap SCAN to ADD more coins</i>\n\n"
+        buttons = []
+        
+        # Get the BUY COIN link from environment
+        buy_link = os.getenv('SHORTIO_LINK_ID', 'https://fomocryptopings.short.gy/coingeckosub+fomocryptopings')
+        
+        for coin in basket_coins:  # coin is a full coin object, not just a symbol
+            # Get coin symbol from the coin object
+            coin_symbol = coin.get('symbol', 'Unknown').upper()
+            
+            # Get FOMO score from the coin object  
+            fomo_score = await get_fresh_fomo_score_for_basket(coin)  # Use fresh FOMO for consistency
+            
+            # Format the line exactly as requested: SYMBOL | FOMO: XX% | BUY COIN
+            message += f"🎯 <b>{coin_symbol}</b> | FOMO: {fomo_score}% | <a href='{buy_link}'>BUY COIN</a>\n"
+            
+            # Add remove button for this coin
+            buttons.append([InlineKeyboardButton(f"❌ Remove {coin_symbol}", callback_data=f"remove_{coin_symbol}")])
+        
+        # Add navigation buttons
+        fcb_balance, _, _, total_free_remaining, _ = get_user_balance(user_id)
+        total_scans = total_free_remaining + fcb_balance
+        
+        buttons.extend([
+            [InlineKeyboardButton("➕ ADD 🟡", callback_data="add_coin_current"), 
+             InlineKeyboardButton("👉 SCAN", callback_data="next_coin")],
+            [InlineKeyboardButton("🛒 BASKET", callback_data="show_basket"), 
+             InlineKeyboardButton("➕ TKN 🤖", callback_data="buy_starter")]
+        ])
+    
+    reply_markup = InlineKeyboardMarkup(buttons)
+    try:
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=message,
+            parse_mode='HTML',
+            reply_markup=reply_markup,
+            disable_web_page_preview=True
+        )
+    except Exception:
+        await query.edit_message_text(text=message, parse_mode='HTML', reply_markup=reply_markup, disable_web_page_preview=True)
+    await query.answer()
+    logging.info(f"🛒 User {user_id} viewed basket: {len(basket_coins) if basket_coins else 0} coins")
+
+async def handle_remove_coin(query, context, user_id, coin_symbol):
+    """Handle REMOVE COIN button press"""
+    try:
+        success = shopping_lists.remove_coin(user_id, coin_symbol)
+        
+        if success:
+            await query.answer(f"✅ {coin_symbol} removed from basket", show_alert=True)
+            # Refresh the basket view
+            await handle_show_basket(query, context, user_id)
+        else:
+            await query.answer(f"❌ Could not remove {coin_symbol}", show_alert=True)
+        
+        logging.info(f"🛒 User {user_id} removed {coin_symbol}: {'success' if success else 'failed'}")
+        
+    except Exception as e:
+        logging.error(f"Error in handle_remove_coin: {e}")
+        await query.answer("❌ Error removing coin", show_alert=True)
+
+# =============================================================================
 # Enhanced Menu Helpers - ALL ORIGINAL FUNCTIONALITY PRESERVED
 # =============================================================================
 
@@ -3275,8 +3561,21 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
     """
     query = update.callback_query
     user_id = query.from_user.id
-    
+
     logging.info(f"🔍 CALLBACK DEBUG: User {user_id} clicked '{query.data}'")
+    
+    # 🛒 ENHANCED SHOPPING LIST DEBUG
+    if "add" in query.data.lower():
+        logging.info(f"🛒 SHOPPING DEBUG: ADD button detected! Data: '{query.data}'")
+        logging.info(f"🛒 SHOPPING DEBUG: Shopping list active: {is_shopping_list_active()}")
+        
+        # Check if user has current coin in session
+        session = get_user_session(user_id)
+        if session.get('history'):
+            current_coin = session['history'][session.get('index', 0)]
+            logging.info(f"🛒 SHOPPING DEBUG: Current coin: {current_coin}")
+        else:
+            logging.info(f"🛒 SHOPPING DEBUG: No coin history found")
     
     # ✅ FIX 1: Check callback cooldown first
     can_proceed, remaining = check_callback_cooldown(user_id)
@@ -3284,10 +3583,16 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
         await safe_answer_callback(query, f"⏰ Please wait {remaining:.1f}s...")
         return
     
-    # ✅ FIX 2: Safe callback answer with timeout protection
-    callback_answered = await safe_answer_callback(query)
-    if not callback_answered:
-        logging.warning(f"⚠️ Callback timeout for user {user_id}, continuing anyway...")
+    # ✅ CRITICAL FIX: Only auto-answer non-shopping callbacks
+    # Shopping callbacks need custom popups, so they handle their own answers
+    shopping_callbacks = ["add_coin_current", "show_basket", "remove_"]
+    needs_custom_answer = any(query.data.startswith(cb) or query.data == cb for cb in shopping_callbacks)
+    
+    if not needs_custom_answer:
+        # ✅ FIX 2: Safe callback answer with timeout protection (only for non-shopping callbacks)
+        callback_answered = await safe_answer_callback(query)
+        if not callback_answered:
+            logging.warning(f"⚠️ Callback timeout for user {user_id}, continuing anyway...")
         # Don't return - continue processing even if answer failed
     
     # =============================================================================
@@ -3406,6 +3711,60 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
             await handle_next_navigation(query, context, user_id)
             return
         
+# =============================================================================
+    # 🛒 SHOPPING LIST CALLBACKS (ADD BEFORE EXISTING 'else')
+    # =============================================================================
+    
+# ADD COIN button (simple version)
+    elif query.data == "add_coin_current":
+        logging.info(f"🛒 CALLBACK DEBUG: ADD button callback triggered for user {user_id}")
+        if not is_shopping_list_active():
+            logging.info(f"🛒 CALLBACK DEBUG: Shopping list not active")
+            await query.answer("❌ Feature not available", show_alert=True)
+            return
+        
+        # Get current coin from session
+        session = get_user_session(user_id)
+        if not session.get('history'):
+            await query.answer("❌ No coin to add", show_alert=True)
+            return
+        
+        current_index = session.get('index', 0)
+        if current_index >= len(session['history']):
+            await query.answer("❌ No coin to add", show_alert=True)
+            return
+        
+        current_coin_id = session['history'][current_index]
+        logging.info(f"🛒 CALLBACK DEBUG: About to call handle_add_coin for {current_coin_id}")
+        await handle_add_coin(query, context, user_id, current_coin_id)
+        return
+
+    # ADD COIN button
+    elif query.data.startswith("add_coin_"):
+        if not is_shopping_list_active():
+            await safe_edit_message(query, text="❌ Feature not available")
+            return
+        coin_symbol = query.data.replace("add_coin_", "")
+        await handle_add_coin(query, context, user_id, coin_symbol)
+        return
+    
+    # SHOW BASKET button
+    elif query.data == "show_basket":
+        if not is_shopping_list_active():
+            await safe_edit_message(query, text="❌ Feature not available")
+            return
+        await handle_show_basket(query, context, user_id)
+        return
+    
+    # REMOVE COIN button
+    elif query.data.startswith("remove_"):
+        if not is_shopping_list_active():
+            await safe_edit_message(query, text="❌ Feature not available")
+            return
+        coin_symbol = query.data.replace("remove_", "")
+        await handle_remove_coin(query, context, user_id, coin_symbol)
+        return
+
         # ✅ FIX: Handle "next" callback from start menu (redirect to next_coin)
     elif query.data == "next":
         logging.info(f"🔧 REDIRECT: Converting 'next' to 'next_coin' for user {user_id}")
@@ -3687,6 +4046,96 @@ def verify_command_registration():
             logging.error(f"  ❌ /{cmd_name} -> NOT CALLABLE!")
     logging.info(f"✅ Total commands registered: {len(REGISTERED_COMMANDS)}")
 
+async def test_shopping_buttons_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Test command to verify shopping list buttons"""
+    user_id = update.effective_user.id
+    
+    # Create a test coin
+    test_coin = {
+        'id': 'bitcoin',
+        'name': 'Bitcoin Test',
+        'symbol': 'BTC',
+        'price': 98000,
+        'change_1h': 2.5,
+        'change_24h': 5.0,
+        'logo': 'https://assets.coingecko.com/coins/images/1/large/bitcoin.png'
+    }
+    
+    # Add to session
+    add_to_user_history(user_id, 'bitcoin', test_coin)
+    
+    # Get user balance
+    user_balance_info = get_user_balance_info(user_id)
+    
+    # Build buttons with shopping list
+    keyboard = build_addictive_buttons(test_coin, user_balance_info)
+    
+    message = f"""🧪 <b>Shopping List Button Test</b>
+
+🔧 <b>Current Settings:</b>
+Shopping List Active: {is_shopping_list_active()}
+User Balance: {user_balance_info.get('fcb_balance', 0)} FCB
+Free Scans: {user_balance_info.get('total_free_remaining', 0)}
+
+🎯 <b>Test Coin: Bitcoin</b>
+FOMO Score: 85%
+
+💡 <b>Button Test:</b>
+Click the ➕ ADD 🟡 button to test shopping list functionality.
+
+🛒 <b>Expected Behavior:</b>
+- Popup should appear: "✅ BTC added to basket!"
+- Logs should show: "🛒 ADD COIN: User {user_id} trying to add current"
+"""
+    
+    await update.message.reply_text(
+        message, 
+        parse_mode='HTML', 
+        reply_markup=keyboard
+    )
+
+async def debug_shopping_state_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Debug command to check shopping list state"""
+    user_id = update.effective_user.id
+    
+    # Get current state
+    shopping_active = is_shopping_list_active()
+    basket_count = shopping_lists.get_count(user_id)
+    basket_coins = shopping_lists.get_list(user_id)
+    
+    # Get session info
+    session = get_user_session(user_id)
+    current_coin = None
+    if session.get('history'):
+        current_index = session.get('index', 0)
+        if current_index < len(session['history']):
+            current_coin = session['history'][current_index]
+    
+    message = f"""🔍 <b>Shopping List Debug State</b>
+
+⚙️ <b>System State:</b>
+Shopping List Enabled: {shopping_active}
+Global Variable: {globals().get('SHOPPING_LIST_ENABLED', 'NOT FOUND')}
+
+🛒 <b>User Basket:</b>
+Coin Count: {basket_count}
+Basket Contents: {[coin.get('symbol', 'Unknown') for coin in basket_coins] if basket_coins else 'Empty'}
+
+📊 <b>Session State:</b>
+Current Coin: {current_coin or 'None'}
+History Length: {len(session.get('history', []))}
+Index: {session.get('index', 0)}
+
+🔧 <b>Environment:</b>
+SHORTIO_LINK_ID: {os.getenv('SHORTIO_LINK_ID', 'NOT SET')[:50]}...
+
+🧪 <b>Function Tests:</b>
+get_user_session(): {'✅ Working' if session else '❌ Failed'}
+shopping_lists.get_list(): {'✅ Working' if isinstance(basket_coins, list) else '❌ Failed'}
+"""
+    
+    await update.message.reply_text(message, parse_mode='HTML')
+
 # =============================================================================
 # CRITICAL FIX: Enhanced Handler Setup Function - COMPLETE ORIGINAL
 # =============================================================================
@@ -3711,6 +4160,7 @@ def setup_handlers(app):
     logging.info("🔍 VERIFYING COMMAND IMPORTS...")
     
     # Import verification with detailed logging
+ # Import verification with detailed logging
     command_functions = {}
     try:
         # These should be available from the current module
@@ -3729,7 +4179,11 @@ def setup_handlers(app):
             'diagnose': debug_next_button_command,  # ✅ NEW: NEXT button diagnostic
             'status': status_command,
             'unsubscribe': unsubscribe_command,
-            'debugsession': debug_session_command
+            'debugsession': debug_session_command,
+            'enable_shopping': enable_shopping_list_command,  # ✅ ADD THIS LINE
+            'disable_shopping': disable_shopping_list_command,  # ✅ ADD THIS LINE
+            'test_shopping': test_shopping_buttons_command,  # 🛒 NEW: Test shopping buttons
+            'debug_shopping': debug_shopping_state_command  # 🛒 NEW: Debug shopping state
         }
         
         logging.info("✅ All command functions verified")
@@ -3737,6 +4191,9 @@ def setup_handlers(app):
     except Exception as import_error:
         logging.error(f"❌ CRITICAL: Command function import failed: {import_error}")
         raise
+    
+    # CRITICAL FIX 3: Register commands with verification
+    logging.info("📝 REGISTERING COMMAND HANDLERS...")
     
     # CRITICAL FIX 3: Register commands with verification
     logging.info("📝 REGISTERING COMMAND HANDLERS...")
