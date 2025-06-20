@@ -1,19 +1,12 @@
 import random
 import logging
 
-# === SIGNAL REWARDS CONFIGURATION (Signal-Based Tiering, Clean UX) ===
-TIERS = [
-    {"name": "Jackpot", "count": 1, "payout": (50, 100), "base_prob": 0.01},
-    {"name": "Diamond", "count": 4, "payout": (25, 60),  "base_prob": 0.03},
-    {"name": "Gold",    "count": 10, "payout": (10, 30), "base_prob": 0.09},
-    {"name": "Silver",  "count": 25, "payout": (5, 15),  "base_prob": 0.18},
-    {"name": "Bronze",  "count": 60, "payout": (2, 6),   "base_prob": 0.24},
-]
+# === SIGNAL REWARDS CONFIGURATION (Simplified: fixed 1–3 token reward, same chance for all coins) ===
+TIERS = []  # No tiers needed for simplified version
 
 def build_signal_rewards_lookup(coin_list):
     """
-    Takes a list of coins sorted by FOMO (highest first) and assigns them to tier buckets.
-    Returns a complete SIGNAL_REWARDS_LOOKUP dict.
+    Assigns default values for all coins — every coin gets equal chance.
     """
     lookup = {
         "tier_lookup": {},
@@ -22,54 +15,46 @@ def build_signal_rewards_lookup(coin_list):
         "win_messages": {},
     }
 
-    idx = 0
-    for tier in TIERS:
-        for _ in range(tier["count"]):
-            if idx >= len(coin_list):
-                break
+    for coin in coin_list:
+        coin_id = (coin.get('id') or coin.get('symbol', 'unknown-symbol')).lower().strip()
+        if not coin_id:
+            logging.warning(f"⚠️ Skipping coin with no valid ID or symbol: {coin}")
+            continue
 
-            coin = coin_list[idx]
-            coin_id = coin.get('id')
-            if not coin_id:
-                idx += 1
-                continue
+        # Equal treatment for all coins
+        lookup["tier_lookup"][coin_id] = "Standard"
+        lookup["probability_lookup"][coin_id] = 0.35  # ~1 in 2.85 chance
+        lookup["token_range_lookup"][coin_id] = (1, 3)
+        lookup["win_messages"][coin_id] = "🎉 Lucky scan! You've earned a reward."
 
-            fomo = coin.get("fomo_score", 50)
-
-            # Assign tier
-            lookup["tier_lookup"][coin_id] = tier["name"]
-            lookup["probability_lookup"][coin_id] = tier["base_prob"] * (fomo / 100)
-            lookup["token_range_lookup"][coin_id] = tier["payout"]
-            lookup["win_messages"][coin_id] = f"Signal match: {tier['name']} tier"
-            idx += 1
+    logging.debug(f"✅ Built signal rewards for {len(lookup['probability_lookup'])} coins")
+    logging.debug(f"🔍 Sample coin IDs: {list(lookup['probability_lookup'].keys())[:5]}")
 
     return lookup
 
-def evaluate_scan_reward(fomo_score, coin_id=None, lookup=None):
+def evaluate_scan_reward(fomo_score, coin_id=None, lookup=None, user_win_history=None):
     """
-    Determines if the scan results in a token reward based on the coin’s FOMO score and tier.
-    Returns:
-        (bool is_visual_winner, int tokens_awarded, str tier_label)
+    Each scan has a flat chance to win 1–3 tokens, regardless of coin or FOMO score.
     """
     if lookup is None:
         return False, 0, "Unknown"
 
-    tier = lookup["tier_lookup"].get(coin_id, "Bronze")
-    base_chance = lookup["probability_lookup"].get(coin_id, 0.01)
-    reward_range = lookup["token_range_lookup"].get(coin_id, (3, 7))
+    coin_id = (coin_id or '').lower().strip()
+    logging.debug(f"🔎 Evaluating coin_id: {coin_id}")
 
-    win_chance = base_chance
+    tier = lookup["tier_lookup"].get(coin_id, "Standard")
+    win_chance = lookup["probability_lookup"].get(coin_id, 0.35)
+    reward_range = lookup["token_range_lookup"].get(coin_id, (1, 3))
+
     random_chance = random.random()
-
-    logging.debug(f"🔍 REWARD LOOKUP MATCH: coin_id={coin_id} found={coin_id in lookup['tier_lookup']}")
-    logging.debug(f"🎯 REWARD DEBUG → Coin ID: {coin_id}, Tier: {tier}, FOMO: {fomo_score}, Chance: {win_chance:.3f}, Rand: {random_chance:.3f}")
+    logging.debug(f"🎯 SCAN → Coin ID: {coin_id}, Chance: {win_chance:.2f}, Rand: {random_chance:.2f}")
 
     if random_chance < win_chance:
         tokens_awarded = random.randint(*reward_range)
-    elif fomo_score >= 70:
-        tokens_awarded = random.choice([1, 2])  # fallback for strong signals
+        logging.debug(f"🏆 WIN! {tokens_awarded} tokens awarded")
     else:
         tokens_awarded = 0
+        logging.debug("🙁 No reward this time")
 
     is_visual_winner = tokens_awarded > 0
     return is_visual_winner, tokens_awarded, tier

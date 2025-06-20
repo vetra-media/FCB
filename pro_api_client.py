@@ -71,6 +71,52 @@ SYMBOL_MAP = {
     'qtum': 'qtum'
 }
 
+# Optional friendly names (user input like "bitcoin", "ethereum", etc.)
+# These will override or supplement direct symbol matches in other files
+SYMBOL_MAP.update({
+    'bitcoin': 'bitcoin',
+    'ethereum': 'ethereum',
+    'binance': 'binancecoin',
+    'cardano': 'cardano',
+    'polkadot': 'polkadot',
+    'avalanche': 'avalanche-2',
+    'chainlink': 'chainlink',
+    'uniswap': 'uniswap',
+    'litecoin': 'litecoin',
+    'bitcoin cash': 'bitcoin-cash',
+    'stellar': 'stellar',
+    'ripple': 'ripple',
+    'dogecoin': 'dogecoin',
+    'shiba inu': 'shiba-inu',
+    'cosmos': 'cosmos',
+    'algorand': 'algorand',
+    'internet computer': 'internet-computer',
+    'vechain': 'vechain',
+    'filecoin': 'filecoin',
+    'tron': 'tron',
+    'ethereum classic': 'ethereum-classic',
+    'monero': 'monero',
+    'fantom': 'fantom',
+    'yearn': 'yearn-finance',
+    'maker': 'maker',
+    'sushi': 'sushi',
+    'curve': 'curve-dao-token',
+    'graph': 'the-graph',
+    'sandbox': 'the-sandbox',
+    'decentraland': 'decentraland',
+    'axie': 'axie-infinity',
+    'iota': 'iota',
+    'tezos': 'tezos',
+    'elrond': 'elrond-erd-2',
+    'theta': 'theta-token',
+    'hedera': 'hedera-hashgraph',
+    'eos': 'eos',
+    'neo': 'neo',
+    'waves': 'waves',
+    'qtum': 'qtum'
+})
+
+
 # =============================================================================
 # ✅ COINGECKO PRO API CONFIGURATION - BEST PRACTICES
 # =============================================================================
