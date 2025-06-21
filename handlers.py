@@ -295,7 +295,7 @@ def format_ultra_clean_winner(coin_data, fomo_score, tokens_won, user_id):
 # =============================================================================
 
 # Admin user IDs from ENV - these users can use token cheat codes
-ADMIN_USER_IDS = [7738783037, 7825269438, 8099494549, 1976638270, 8141128105]  # Your admin IDs
+ADMIN_USER_IDS = [7738783037, 7825269438, 8099494549, 1976638270, 8141128105, 5994404421]  # Your admin IDs
 
 async def handle_admin_token_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """

@@ -6,6 +6,7 @@ Pro API Client for FCB (Crypto FOMO Bot) - COINGECKO PRO API BEST PRACTICES
 ✅ FIX 4: Stablecoin filtering in data source
 """
 
+import os
 import aiohttp
 import asyncio
 import time
@@ -122,7 +123,7 @@ SYMBOL_MAP.update({
 # =============================================================================
 
 # ✅ Pro API Configuration (from CoinGecko documentation)
-PRO_API_KEY = "CG-bJP1bqyMemFNQv5dp4nvA9xm"  # Your validated Pro API key
+PRO_API_KEY = os.getenv("COINGECKO_API_KEY", "CG-bJP1bqyMemFNQv5dp4nvA9xm")
 PRO_API_BASE = "https://pro-api.coingecko.com/api/v3"
 
 # ✅ Pro API Rate Limits (from CoinGecko Pro documentation)
@@ -178,10 +179,95 @@ class ProAPIRateLimiter:
 # ✅ OPTIMIZED SESSION MANAGEMENT WITH CLEANUP
 # =============================================================================
 
+async def make_pro_api_request(endpoint: str, params: Dict = None) -> Optional[Dict]:
+    """
+    ✅ SECURITY FIXED: Make Pro API request using HEADERS (not query params)
+    CoinGecko recommends headers to avoid exposing API keys in URLs
+    ✅ FIXED: Proper headers handling to avoid conflicts
+    """
+    if params is None:
+        params = {}
+    
+    # Rate limiting
+    await rate_limiter.acquire()
+    
+    url = f"{PRO_API_BASE}/{endpoint}"
+    session = await get_optimized_session()
+    
+    # ✅ SECURITY FIX: Complete headers dict with API key
+    request_headers = {
+        'x-cg-pro-api-key': PRO_API_KEY,  # API key in header (SECURE)
+        'Accept': 'application/json',
+        'User-Agent': 'FCB-Pro-Bot/1.0',
+        'Accept-Encoding': 'gzip, deflate',
+        'Connection': 'keep-alive'
+    }
+    
+    try:
+        async with session.get(url, params=params, headers=request_headers) as response:
+            
+            if response.status == 200:
+                data = await response.json()
+                logging.debug(f"✅ Pro API success: {endpoint}")
+                return data
+            
+            elif response.status == 429:
+                retry_after = response.headers.get('Retry-After', '60')
+                remaining = response.headers.get('X-RateLimit-Remaining', 'Unknown')
+                logging.warning(f"⚠️ Pro API rate limited: {endpoint} (retry after {retry_after}s, remaining: {remaining})")
+                
+                try:
+                    retry_seconds = min(int(retry_after), 60)
+                    await asyncio.sleep(retry_seconds)
+                except (ValueError, TypeError):
+                    await asyncio.sleep(60)
+                return None
+            
+            elif response.status == 401:
+                logging.error(f"❌ Pro API authentication failed: {endpoint}")
+                logging.error("Check your API key and ensure it's valid")
+                return None
+            
+            elif response.status == 403:
+                logging.error(f"❌ Pro API forbidden: {endpoint}")
+                logging.error("Check if your plan supports this endpoint")
+                return None
+            
+            elif response.status == 404:
+                logging.warning(f"⚠️ Pro API not found: {endpoint}")
+                return None
+            
+            elif response.status == 422:
+                logging.warning(f"⚠️ Pro API invalid parameters: {endpoint}")
+                try:
+                    error_data = await response.json()
+                    logging.warning(f"   Error details: {error_data}")
+                except:
+                    pass
+                return None
+            
+            else:
+                try:
+                    error_text = await response.text()
+                    logging.warning(f"⚠️ Pro API {response.status}: {endpoint} - {error_text[:100]}")
+                except:
+                    logging.warning(f"⚠️ Pro API {response.status}: {endpoint}")
+                return None
+                
+    except asyncio.TimeoutError:
+        logging.warning(f"⏰ Pro API timeout: {endpoint}")
+        return None
+    except aiohttp.ClientError as e:
+        logging.error(f"🌐 Pro API client error: {endpoint} - {e}")
+        return None
+    except Exception as e:
+        logging.error(f"❌ Pro API unexpected error: {endpoint} - {e}")
+        return None
+    
 async def get_optimized_session():
     """
-    ✅ Create optimized session for CoinGecko Pro API
-    Follows Pro API best practices with proper timeouts and headers
+    ✅ SECURITY FIXED: Session without API key in default headers
+    API key should be passed per-request in headers for security
     """
     global session
     if session is None or session.closed:
@@ -203,12 +289,13 @@ async def get_optimized_session():
             force_close=False,
         )
         
-        # ✅ Pro API required headers
+        # ✅ SECURITY FIX: Don't include API key in default headers
         headers = {
             'User-Agent': 'FCB-Pro-Bot/1.0',
             'Accept': 'application/json',
             'Accept-Encoding': 'gzip, deflate',
             'Connection': 'keep-alive'
+            # ❌ REMOVED: API key from default headers (now passed per-request)
         }
         
         session = aiohttp.ClientSession(
@@ -217,7 +304,7 @@ async def get_optimized_session():
             headers=headers
         )
         
-        logging.info("✅ Pro API session created with optimized settings")
+        logging.info("✅ Pro API session created with secure headers")
     
     return session
 
@@ -226,6 +313,86 @@ rate_limiter = ProAPIRateLimiter(
     calls_per_minute=RATE_LIMIT_PER_MINUTE,
     burst_allowance=RATE_LIMIT_BURST
 )
+
+# ADD: API key validation function
+def validate_pro_api_key():
+    """Validate Pro API key format and configuration"""
+    if not PRO_API_KEY:
+        logging.error("❌ Pro API key not configured!")
+        return False
+    
+    if PRO_API_KEY == "YOUR_API_KEY":
+        logging.error("❌ Pro API key not replaced from template!")
+        return False
+    
+    if not PRO_API_KEY.startswith("CG-"):
+        logging.error("❌ Pro API key format incorrect (should start with 'CG-')")
+        return False
+    
+    if len(PRO_API_KEY) < 20:
+        logging.error("❌ Pro API key too short")
+        return False
+    
+    logging.info("✅ Pro API key format validated")
+    return True
+
+# ADD: Enhanced testing function
+async def test_pro_api_security():
+    """Test Pro API with security validation"""
+    print("🔐 TESTING PRO API SECURITY:")
+    print("=" * 50)
+    
+    # Validate API key format
+    if not validate_pro_api_key():
+        print("❌ API key validation failed")
+        return False
+    
+    print(f"✅ API key format valid: {PRO_API_KEY[:10]}...")
+    
+    # Test authentication
+    print("🔑 Testing authentication...")
+    ping_result = await make_pro_api_request("ping")
+    if ping_result:
+        print("✅ Pro API authentication successful (secure headers method)")
+        gecko_says = ping_result.get('gecko_says', 'No message')
+        print(f"   CoinGecko says: {gecko_says}")
+    else:
+        print("❌ Pro API authentication failed")
+        return False
+    
+    # Test usage endpoint
+    print("📊 Checking API usage...")
+    try:
+        usage_data = await make_pro_api_request("key")
+        if usage_data:
+            plan = usage_data.get('plan', 'Unknown')
+            monthly_limit = usage_data.get('monthly_call_limit', 0)
+            current_calls = usage_data.get('current_total_monthly_calls', 0)
+            rate_limit = usage_data.get('rate_limit_request_per_minute', 0)
+            
+            print(f"✅ Plan: {plan}")
+            print(f"✅ Rate Limit: {rate_limit}/min")
+            print(f"✅ Usage: {current_calls:,}/{monthly_limit:,}")
+        else:
+            print("⚠️ Could not retrieve usage data (but auth worked)")
+    except Exception as e:
+        print(f"⚠️ Usage check failed: {e}")
+    
+    # Test market data
+    print("📈 Testing market data...")
+    markets = await fetch_pro_markets_data(page=1, per_page=5)
+    if markets:
+        print(f"✅ Market data: {len(markets)} coins fetched")
+        for coin in markets[:2]:
+            symbol = coin.get('symbol', 'Unknown').upper()
+            price = coin.get('current_price', 0)
+            print(f"   {symbol}: ${price:,.4f}")
+    else:
+        print("❌ Market data failed")
+        return False
+    
+    print("✅ All security tests passed!")
+    return True
 
 # =============================================================================
 # ✅ STABLECOIN FILTERING IN DATA SOURCE
@@ -298,51 +465,6 @@ stablecoin_filter = ProAPIStablecoinFilter()
 # =============================================================================
 # ✅ PRO API FUNCTIONS WITH BEST PRACTICES
 # =============================================================================
-
-async def make_pro_api_request(endpoint: str, params: Dict = None) -> Optional[Dict]:
-    """
-    ✅ Make Pro API request following CoinGecko best practices
-    """
-    if params is None:
-        params = {}
-    
-    # ✅ CRITICAL: Add Pro API key to all requests
-    params['x_cg_pro_api_key'] = PRO_API_KEY
-    
-    # Rate limiting
-    await rate_limiter.acquire()
-    
-    url = f"{PRO_API_BASE}/{endpoint}"
-    session = await get_optimized_session()
-    
-    try:
-        async with session.get(url, params=params) as response:
-            # ✅ Handle Pro API specific responses
-            if response.status == 200:
-                return await response.json()
-            elif response.status == 429:
-                # Rate limit hit
-                logging.warning(f"Pro API rate limit hit for {endpoint}")
-                await asyncio.sleep(1)
-                return None
-            elif response.status == 401:
-                # Authentication error
-                logging.error(f"Pro API authentication failed - check API key")
-                return None
-            elif response.status == 403:
-                # Forbidden - plan limits
-                logging.error(f"Pro API forbidden - check plan limits")
-                return None
-            else:
-                logging.warning(f"Pro API returned {response.status} for {endpoint}")
-                return None
-                
-    except asyncio.TimeoutError:
-        logging.warning(f"Pro API timeout for {endpoint}")
-        return None
-    except Exception as e:
-        logging.error(f"Pro API error for {endpoint}: {e}")
-        return None
 
 async def fetch_pro_markets_data(page: int = 1, per_page: int = 250) -> List[Dict]:
     """
@@ -893,6 +1015,7 @@ async def test_opportunity_generation():
     else:
         print("❌ No opportunities generated")
         return False
+    
 
 # Quick test commands
 # asyncio.run(test_pro_api_connection())
@@ -904,3 +1027,154 @@ print("   ⚡ Optimized rate limiting (500 calls/minute)")
 print("   🔒 Stablecoin filtering at source")
 print("   🧹 Enhanced session cleanup")
 print("   🔧 CoinGecko Pro API best practices")
+
+# ============================================================================= 
+# 🔥 SUPER EASY METHOD: Just copy these blocks to the END of your pro_api_client.py file
+# =============================================================================
+
+# BLOCK 1: Copy this to the very end of your file (after all existing code)
+# This will override your existing make_pro_api_request function
+
+async def make_pro_api_request_secure(endpoint: str, params: Dict = None) -> Optional[Dict]:
+    """
+    ✅ NEW SECURE VERSION: Make Pro API request using HEADERS (not query params)
+    This function replaces the old make_pro_api_request function
+    """
+    if params is None:
+        params = {}
+    
+    # Rate limiting
+    await rate_limiter.acquire()
+    
+    url = f"{PRO_API_BASE}/{endpoint}"
+    session = await get_optimized_session()
+    
+    # ✅ SECURITY FIX: Complete headers dict with API key
+    request_headers = {
+        'x-cg-pro-api-key': PRO_API_KEY,  # API key in header (SECURE)
+        'Accept': 'application/json',
+        'User-Agent': 'FCB-Pro-Bot/1.0',
+        'Accept-Encoding': 'gzip, deflate',
+        'Connection': 'keep-alive'
+    }
+    
+    try:
+        async with session.get(url, params=params, headers=request_headers) as response:
+            
+            if response.status == 200:
+                data = await response.json()
+                logging.debug(f"✅ Pro API success: {endpoint}")
+                return data
+            
+            elif response.status == 429:
+                retry_after = response.headers.get('Retry-After', '60')
+                logging.warning(f"⚠️ Pro API rate limited: {endpoint} (retry after {retry_after}s)")
+                try:
+                    retry_seconds = min(int(retry_after), 60)
+                    await asyncio.sleep(retry_seconds)
+                except:
+                    await asyncio.sleep(60)
+                return None
+            
+            elif response.status == 401:
+                logging.error(f"❌ Pro API authentication failed: {endpoint}")
+                return None
+            
+            elif response.status == 403:
+                logging.error(f"❌ Pro API forbidden: {endpoint}")
+                return None
+            
+            elif response.status == 404:
+                logging.warning(f"⚠️ Pro API not found: {endpoint}")
+                return None
+            
+            else:
+                logging.warning(f"⚠️ Pro API {response.status}: {endpoint}")
+                return None
+                
+    except Exception as e:
+        logging.error(f"❌ Pro API error: {endpoint} - {e}")
+        return None
+
+# BLOCK 2: Override the old function name to use the new secure version
+# This makes the secure version work automatically without changing other code
+make_pro_api_request = make_pro_api_request_secure
+
+# BLOCK 3: Add logging function
+def log_pro_api_config():
+    """Log Pro API configuration for debugging"""
+    logging.info("🔑 Pro API Configuration:")
+    logging.info(f"   Endpoint: {PRO_API_BASE}")
+    logging.info(f"   API Key: {PRO_API_KEY[:10]}... (length: {len(PRO_API_KEY)})")
+    
+    # Check environment variable
+    env_key = os.getenv("COINGECKO_API_KEY")
+    if env_key:
+        logging.info(f"   ✅ Environment variable set")
+    else:
+        logging.warning(f"   ⚠️ Using hardcoded API key")
+
+# BLOCK 4: Add quick test function  
+async def quick_pro_api_test():
+    """Quick test to verify Pro API is working"""
+    print("⚡ Quick Pro API Test...")
+    
+    result = await make_pro_api_request("ping")
+    if result:
+        print(f"✅ Pro API working! Message: {result.get('gecko_says', 'OK')}")
+        return True
+    else:
+        print("❌ Pro API not working")
+        return False
+
+# BLOCK 5: Add comprehensive test function
+async def test_pro_api_complete():
+    """Complete Pro API test"""
+    print("🔐 COMPLETE PRO API TEST")
+    print("=" * 40)
+    
+    # Test 1: Basic ping
+    print("🔑 Testing authentication...")
+    ping_result = await make_pro_api_request("ping")
+    if ping_result:
+        print("✅ Authentication successful!")
+        gecko_says = ping_result.get('gecko_says', 'No message')
+        print(f"   CoinGecko says: '{gecko_says}'")
+    else:
+        print("❌ Authentication failed")
+        return False
+    
+    # Test 2: Market data
+    print("\n📈 Testing market data...")
+    try:
+        markets = await fetch_pro_markets_data(page=1, per_page=3)
+        if markets:
+            print(f"✅ Market data: {len(markets)} coins fetched")
+            for coin in markets[:2]:
+                symbol = coin.get('symbol', 'Unknown').upper()
+                price = coin.get('current_price', 0)
+                print(f"   {symbol}: ${price:,.4f}")
+        else:
+            print("❌ Market data failed")
+            return False
+    except Exception as e:
+        print(f"❌ Market data error: {e}")
+        return False
+    
+    print("\n✅ ALL TESTS PASSED!")
+    return True
+
+# BLOCK 6: Call the logging function immediately
+log_pro_api_config()
+
+# BLOCK 7: Easy test commands (uncomment to run)
+# To test, uncomment one of these lines:
+# import asyncio
+# asyncio.run(quick_pro_api_test())
+# asyncio.run(test_pro_api_complete())
+
+print("🔒 SECURITY UPGRADE APPLIED!")
+print("✅ Pro API now uses secure headers authentication")
+print("✅ Ready to test with: asyncio.run(quick_pro_api_test())")
+
+# asyncio.run(quick_pro_api_test())  # Commented out to prevent double execution
