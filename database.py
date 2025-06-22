@@ -1,12 +1,13 @@
 """
 Database module for CFB (Crypto FOMO Bot)
-Handles user management, FCB tokens, and rate limiting
+Handles user management, FCB tokens, and rate limiting - PostgreSQL Version
 """
 
-import sqlite3
-import time
 import logging
 import os
+import psycopg2
+import psycopg2.extras
+import time
 from contextlib import contextmanager
 
 # FCB Token Configuration
@@ -16,41 +17,31 @@ NEW_USER_BONUS = 3
 # Rate limiting storage
 user_last_request = {}
 
-# ✅ RENDER-FORCED: Force consistent absolute path
-DATABASE_PATH = '/opt/render/project/src/fcb_users.db'
-logging.info(f"🔍 Database path: {DATABASE_PATH}")
-
-# ✅ RENDER-SAFE: Only create directory if path actually has a directory
-db_dir = os.path.dirname(DATABASE_PATH)
-if db_dir and db_dir != '':  # This prevents the empty string error
-    try:
-        os.makedirs(db_dir, exist_ok=True)
-        logging.info(f"✅ Database directory created: {db_dir}")
-    except Exception as e:
-        logging.warning(f"Could not create database directory: {e}")
-
 @contextmanager
 def get_db_connection():
-    """Simple, reliable context manager"""
-    conn = sqlite3.connect(DATABASE_PATH, timeout=30.0)
+    """PostgreSQL connection context manager"""
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise Exception("DATABASE_URL environment variable not set")
+    
+    conn = psycopg2.connect(database_url)
     try:
         yield conn
     finally:
         conn.close()
 
 def init_user_db():
-    """Initialize user database with enhanced error handling"""
+    """Initialize user database with PostgreSQL"""
     try:
-        # ✅ Log the database path for debugging
-        logging.info(f"🔍 Initializing database at: {DATABASE_PATH}")
+        logging.info("🔍 Initializing PostgreSQL database...")
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Create table with proper error handling
+            # Create table with PostgreSQL syntax
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS users (
-                    user_id INTEGER PRIMARY KEY,
+                    user_id BIGINT PRIMARY KEY,
                     fcb_balance INTEGER DEFAULT 0,
                     total_queries INTEGER DEFAULT 0,
                     free_queries_used INTEGER DEFAULT 0,
@@ -71,18 +62,16 @@ def init_user_db():
                 CREATE INDEX IF NOT EXISTS idx_last_reset ON users(last_free_reset)
             ''')
             
-            # ✅ ADD THIS: Explicit commit
             conn.commit()
             
-            # ✅ Log database info for debugging
+            # Log database info for debugging
             cursor.execute('SELECT COUNT(*) FROM users')
             user_count = cursor.fetchone()[0]
-            logging.info(f"✅ Database initialized successfully at {DATABASE_PATH}")
+            logging.info(f"✅ PostgreSQL database initialized successfully")
             logging.info(f"📊 Current user count: {user_count}")
             
     except Exception as e:
         logging.error(f"❌ Error initializing database: {e}")
-        logging.error(f"❌ Database path: {DATABASE_PATH}")
         raise
 
 def get_user_balance(user_id):
@@ -95,17 +84,19 @@ def get_user_balance(user_id):
             cursor.execute('''
                 UPDATE users 
                 SET free_queries_used = 0, last_free_reset = CURRENT_DATE 
-                WHERE user_id = ? AND last_free_reset < CURRENT_DATE
+                WHERE user_id = %s AND last_free_reset < CURRENT_DATE
             ''', (user_id,))
             
-            # Create new user with bonus
+            # Create new user with bonus (PostgreSQL syntax)
             cursor.execute('''
-                INSERT OR IGNORE INTO users (user_id, has_received_bonus) VALUES (?, FALSE)
+                INSERT INTO users (user_id, has_received_bonus) 
+                VALUES (%s, FALSE) 
+                ON CONFLICT (user_id) DO NOTHING
             ''', (user_id,))
             
             cursor.execute('''
                 SELECT fcb_balance, free_queries_used, new_user_bonus_used, has_received_bonus 
-                FROM users WHERE user_id = ?
+                FROM users WHERE user_id = %s
             ''', (user_id,))
             
             result = cursor.fetchone()
@@ -142,10 +133,10 @@ def spend_fcb_token(user_id):
                     SET new_user_bonus_used = new_user_bonus_used + 1, 
                         total_queries = total_queries + 1,
                         has_received_bonus = CASE 
-                            WHEN new_user_bonus_used + 1 >= ? THEN TRUE 
+                            WHEN new_user_bonus_used + 1 >= %s THEN TRUE 
                             ELSE FALSE 
                         END
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                 ''', (NEW_USER_BONUS, user_id))
                 conn.commit()
                 
@@ -162,7 +153,7 @@ def spend_fcb_token(user_id):
                 cursor.execute('''
                     UPDATE users 
                     SET free_queries_used = free_queries_used + 1, total_queries = total_queries + 1
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                 ''', (user_id,))
                 conn.commit()
                 
@@ -177,7 +168,7 @@ def spend_fcb_token(user_id):
                 cursor.execute('''
                     UPDATE users 
                     SET fcb_balance = fcb_balance - 1, total_queries = total_queries + 1
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                 ''', (user_id,))
                 conn.commit()
                 return True, f"💎 1 FCB token spent. Balance: {fcb_balance - 1} tokens"
@@ -196,23 +187,25 @@ def add_fcb_tokens(user_id, amount):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Ensure user exists
+            # Ensure user exists (PostgreSQL syntax)
             cursor.execute('''
-                INSERT OR IGNORE INTO users (user_id) VALUES (?)
+                INSERT INTO users (user_id) 
+                VALUES (%s) 
+                ON CONFLICT (user_id) DO NOTHING
             ''', (user_id,))
             
             # Get current balance for logging
-            cursor.execute('SELECT fcb_balance FROM users WHERE user_id = ?', (user_id,))
+            cursor.execute('SELECT fcb_balance FROM users WHERE user_id = %s', (user_id,))
             result = cursor.fetchone()
             old_balance = result[0] if result else 0
             
             # Add tokens
             cursor.execute('''
-                UPDATE users SET fcb_balance = fcb_balance + ? WHERE user_id = ?
+                UPDATE users SET fcb_balance = fcb_balance + %s WHERE user_id = %s
             ''', (amount, user_id))
 
             # Verify the update worked
-            cursor.execute('SELECT fcb_balance FROM users WHERE user_id = ?', (user_id,))
+            cursor.execute('SELECT fcb_balance FROM users WHERE user_id = %s', (user_id,))
             result = cursor.fetchone()
             new_balance = result[0] if result else 0
             
@@ -260,18 +253,20 @@ def get_user_balance_detailed(user_id):
             cursor.execute('''
                 UPDATE users 
                 SET free_queries_used = 0, last_free_reset = CURRENT_DATE 
-                WHERE user_id = ? AND last_free_reset < CURRENT_DATE
+                WHERE user_id = %s AND last_free_reset < CURRENT_DATE
             ''', (user_id,))
             
-            # Create new user with bonus
+            # Create new user with bonus (PostgreSQL syntax)
             cursor.execute('''
-                INSERT OR IGNORE INTO users (user_id, has_received_bonus) VALUES (?, FALSE)
+                INSERT INTO users (user_id, has_received_bonus) 
+                VALUES (%s, FALSE) 
+                ON CONFLICT (user_id) DO NOTHING
             ''', (user_id,))
             
             cursor.execute('''
                 SELECT fcb_balance, free_queries_used, new_user_bonus_used, 
                        has_received_bonus, total_queries, created_at, first_purchase_date
-                FROM users WHERE user_id = ?
+                FROM users WHERE user_id = %s
             ''', (user_id,))
             
             result = cursor.fetchone()
@@ -302,19 +297,6 @@ def get_user_balance_detailed(user_id):
         logging.error(f"Database error in get_user_balance_detailed: {e}")
         return None
 
-# ✅ Add database backup functionality
-def backup_database():
-    """Create a backup of the database"""
-    try:
-        import shutil
-        backup_path = f"{DATABASE_PATH}.backup"
-        shutil.copy2(DATABASE_PATH, backup_path)
-        logging.info(f"✅ Database backed up to {backup_path}")
-        return True
-    except Exception as e:
-        logging.error(f"❌ Database backup failed: {e}")
-        return False
-    
 def verify_database_integrity():
     """Debug function to verify database state and persistence"""
     try:
@@ -328,15 +310,11 @@ def verify_database_integrity():
             cursor.execute("SELECT COUNT(*) FROM users WHERE fcb_balance > 0")
             users_with_tokens = cursor.fetchone()[0]
             
-            cursor.execute("SELECT SUM(fcb_balance) FROM users")
-            total_tokens = cursor.fetchone()[0] or 0
+            cursor.execute("SELECT COALESCE(SUM(fcb_balance), 0) FROM users")
+            total_tokens = cursor.fetchone()[0]
             
             cursor.execute("SELECT COUNT(*) FROM users WHERE first_purchase_date IS NOT NULL")
             paid_users = cursor.fetchone()[0]
-            
-            # Check file integrity
-            cursor.execute("PRAGMA integrity_check")
-            integrity_result = cursor.fetchone()[0]
             
             logging.info(f"🔍 Database stats: {total_users} users, {users_with_tokens} with tokens, {total_tokens} total tokens")
             
@@ -345,7 +323,6 @@ def verify_database_integrity():
                 'users_with_tokens': users_with_tokens,
                 'total_tokens': total_tokens,
                 'paid_users': paid_users,
-                'integrity_check': integrity_result,
                 'persistence_status': 'WORKING' if users_with_tokens > 0 else 'NO_TOKENS_YET'
             }
             
