@@ -16,16 +16,19 @@ NEW_USER_BONUS = 3
 # Rate limiting storage
 user_last_request = {}
 
-# ✅ FIXED: Use environment variable for database path with fallback
+# ✅ RENDER-FIXED: Safe database path handling
 DATABASE_PATH = os.getenv('DATABASE_PATH', 'fcb_users.db')
 
-# ✅ Ensure database directory exists
-try:
-    os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
-except Exception as e:
-    # If we can't create the directory, fall back to current directory
-    logging.warning(f"Could not create database directory, using current directory: {e}")
-    DATABASE_PATH = 'fcb_users.db'
+# ✅ RENDER-SAFE: Only create directory if path actually has a directory
+db_dir = os.path.dirname(DATABASE_PATH)
+if db_dir and db_dir != '':  # This prevents the empty string error
+    try:
+        os.makedirs(db_dir, exist_ok=True)
+        logging.info(f"✅ Database directory created: {db_dir}")
+    except Exception as e:
+        logging.warning(f"Could not create database directory: {e}")
+
+logging.info(f"🔍 Database path: {DATABASE_PATH}")
 
 @contextmanager
 def get_db_connection():
