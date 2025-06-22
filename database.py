@@ -16,8 +16,9 @@ NEW_USER_BONUS = 3
 # Rate limiting storage
 user_last_request = {}
 
-# ✅ RENDER-FIXED: Safe database path handling
-DATABASE_PATH = os.getenv('DATABASE_PATH', 'fcb_users.db')
+# ✅ RENDER-FORCED: Force consistent absolute path
+DATABASE_PATH = '/opt/render/project/src/fcb_users.db'
+logging.info(f"🔍 Database path: {DATABASE_PATH}")
 
 # ✅ RENDER-SAFE: Only create directory if path actually has a directory
 db_dir = os.path.dirname(DATABASE_PATH)
@@ -27,8 +28,6 @@ if db_dir and db_dir != '':  # This prevents the empty string error
         logging.info(f"✅ Database directory created: {db_dir}")
     except Exception as e:
         logging.warning(f"Could not create database directory: {e}")
-
-logging.info(f"🔍 Database path: {DATABASE_PATH}")
 
 @contextmanager
 def get_db_connection():
