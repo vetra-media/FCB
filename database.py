@@ -29,15 +29,12 @@ except Exception as e:
 
 @contextmanager
 def get_db_connection():
-    """Context manager for database connections"""
-    conn = None
+    """Simple, reliable context manager"""
+    conn = sqlite3.connect(DATABASE_PATH, timeout=30.0)
     try:
-        # ✅ FIXED: Use persistent path instead of relative path
-        conn = sqlite3.connect(DATABASE_PATH, timeout=30.0)
         yield conn
     finally:
-        if conn:
-            conn.close()
+        conn.close()
 
 def init_user_db():
     """Initialize user database with enhanced error handling"""
@@ -72,6 +69,7 @@ def init_user_db():
                 CREATE INDEX IF NOT EXISTS idx_last_reset ON users(last_free_reset)
             ''')
             
+            # ✅ ADD THIS: Explicit commit
             conn.commit()
             
             # ✅ Log database info for debugging
@@ -210,7 +208,7 @@ def add_fcb_tokens(user_id, amount):
             cursor.execute('''
                 UPDATE users SET fcb_balance = fcb_balance + ? WHERE user_id = ?
             ''', (amount, user_id))
-            
+
             # Verify the update worked
             cursor.execute('SELECT fcb_balance FROM users WHERE user_id = ?', (user_id,))
             result = cursor.fetchone()
@@ -314,3 +312,41 @@ def backup_database():
     except Exception as e:
         logging.error(f"❌ Database backup failed: {e}")
         return False
+    
+def verify_database_integrity():
+    """Debug function to verify database state and persistence"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Get basic stats
+            cursor.execute("SELECT COUNT(*) FROM users")
+            total_users = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM users WHERE fcb_balance > 0")
+            users_with_tokens = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT SUM(fcb_balance) FROM users")
+            total_tokens = cursor.fetchone()[0] or 0
+            
+            cursor.execute("SELECT COUNT(*) FROM users WHERE first_purchase_date IS NOT NULL")
+            paid_users = cursor.fetchone()[0]
+            
+            # Check file integrity
+            cursor.execute("PRAGMA integrity_check")
+            integrity_result = cursor.fetchone()[0]
+            
+            logging.info(f"🔍 Database stats: {total_users} users, {users_with_tokens} with tokens, {total_tokens} total tokens")
+            
+            return {
+                'total_users': total_users,
+                'users_with_tokens': users_with_tokens,
+                'total_tokens': total_tokens,
+                'paid_users': paid_users,
+                'integrity_check': integrity_result,
+                'persistence_status': 'WORKING' if users_with_tokens > 0 else 'NO_TOKENS_YET'
+            }
+            
+    except Exception as e:
+        logging.error(f"Database integrity check failed: {e}")
+        return None
