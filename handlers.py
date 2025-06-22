@@ -4183,7 +4183,8 @@ def setup_handlers(app):
             'enable_shopping': enable_shopping_list_command,  # ✅ ADD THIS LINE
             'disable_shopping': disable_shopping_list_command,  # ✅ ADD THIS LINE
             'test_shopping': test_shopping_buttons_command,  # 🛒 NEW: Test shopping buttons
-            'debug_shopping': debug_shopping_state_command  # 🛒 NEW: Debug shopping state
+            'debug_shopping': debug_shopping_state_command,  # 🛒 NEW: Debug shopping state
+            'check_persistence': check_production_persistence
         }
         
         logging.info("✅ All command functions verified")
@@ -4261,6 +4262,61 @@ def setup_handlers(app):
     logging.info("🎯 Bot is ready for production with enhanced error handling!")
     
     return True
+
+async def check_production_persistence(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    🔍 ADMIN: Check token persistence in production
+    Usage: /check_persistence
+    """
+    user_id = update.effective_user.id
+    
+    # Only allow admin users
+    if user_id not in [7738783037, 7825269438, 8099494549, 1976638270, 8141128105]:
+        await update.message.reply_text("❌ Admin only")
+        return
+    
+    try:
+        from database import DATABASE_PATH, verify_database_integrity
+        import os
+        
+        # Check database file location and size
+        abs_path = os.path.abspath(DATABASE_PATH)
+        file_exists = os.path.exists(DATABASE_PATH)
+        file_size = os.path.getsize(DATABASE_PATH) if file_exists else 0
+        
+        message = f"🔍 <b>Production Database Check</b>\n\n"
+        message += f"📍 <b>Database Path:</b>\n<code>{abs_path}</code>\n\n"
+        message += f"📁 <b>File Status:</b> {'✅ EXISTS' if file_exists else '❌ MISSING'}\n"
+        message += f"📊 <b>File Size:</b> {file_size} bytes\n\n"
+        
+        if file_exists:
+            # Check integrity
+            integrity = verify_database_integrity()
+            if integrity:
+                message += f"👥 <b>Total Users:</b> {integrity['total_users']}\n"
+                message += f"💎 <b>Users with Tokens:</b> {integrity['users_with_tokens']}\n"
+                message += f"🪙 <b>Total Tokens:</b> {integrity['total_tokens']}\n"
+                message += f"💳 <b>Paid Users:</b> {integrity['paid_users']}\n"
+                message += f"✅ <b>Status:</b> {integrity['persistence_status']}\n\n"
+                
+                if integrity['users_with_tokens'] > 0:
+                    message += "🎉 <b>TOKEN PERSISTENCE: WORKING!</b>\n"
+                else:
+                    message += "💭 <b>No purchased tokens yet (normal for new deployment)</b>\n"
+            else:
+                message += "❌ <b>Database integrity check failed</b>\n"
+        else:
+            message += "❌ <b>Database file not found - check deployment</b>\n"
+            
+        # Environment info
+        message += f"\n🌍 <b>Environment Info:</b>\n"
+        message += f"Working Directory: <code>{os.getcwd()}</code>\n"
+        message += f"DATABASE_PATH env: <code>{os.getenv('DATABASE_PATH', 'Not set')}</code>\n"
+        
+        await update.message.reply_text(message, parse_mode='HTML')
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Check failed: {str(e)}", parse_mode='HTML')
 
 async def debug_psychology_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Debug command to check user's psychology stats"""
