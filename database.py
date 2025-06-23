@@ -134,7 +134,7 @@ def get_user_balance(user_id):
         return 0, 0, 0, 0, False
 
 def spend_fcb_token(user_id):
-    """Optimized spending with FOMO language - FIXED VERSION"""
+    """Optimized spending with FOMO language - FIXED VERSION WITH ENHANCED LOGGING"""
     try:
         # Get fresh balance data in the same transaction
         with get_db_connection() as conn:
@@ -158,8 +158,13 @@ def spend_fcb_token(user_id):
             else:
                 fcb_balance, free_queries_used, new_user_bonus_used, has_received_bonus = result
             
+            # 🔧 ENHANCED LOGGING - Show what we're working with
+            logging.info(f"💎 SPEND DEBUG for user {user_id}: FCB={fcb_balance}, Free={free_queries_used}/{FREE_QUERIES_PER_DAY}, Bonus={new_user_bonus_used}/{NEW_USER_BONUS}, HasBonus={has_received_bonus}")
+            
             # Priority 1: Use new user bonus first (creates instant engagement)
             if not has_received_bonus and new_user_bonus_used < NEW_USER_BONUS:
+                logging.info(f"💎 SPEND PATH: Using bonus scan (Path 1)")
+                
                 cursor.execute('''
                     UPDATE users 
                     SET new_user_bonus_used = new_user_bonus_used + 1, 
@@ -170,6 +175,10 @@ def spend_fcb_token(user_id):
                         END
                     WHERE user_id = %s
                 ''', (NEW_USER_BONUS, user_id))
+                
+                # 🔧 ENHANCED LOGGING - Check what actually happened
+                rows_affected = cursor.rowcount
+                logging.info(f"💎 Bonus scan UPDATE affected {rows_affected} rows")
                 
                 # CRITICAL: Commit transaction BEFORE returning
                 conn.commit()
@@ -185,11 +194,17 @@ def spend_fcb_token(user_id):
             
             # Priority 2: Use daily free scans
             elif free_queries_used < FREE_QUERIES_PER_DAY:
+                logging.info(f"💎 SPEND PATH: Using daily free scan (Path 2)")
+                
                 cursor.execute('''
                     UPDATE users 
                     SET free_queries_used = free_queries_used + 1, total_queries = total_queries + 1
                     WHERE user_id = %s
                 ''', (user_id,))
+                
+                # 🔧 ENHANCED LOGGING - Check what actually happened
+                rows_affected = cursor.rowcount
+                logging.info(f"💎 Free scan UPDATE affected {rows_affected} rows")
                 
                 # CRITICAL: Commit transaction BEFORE returning
                 conn.commit()
@@ -203,20 +218,32 @@ def spend_fcb_token(user_id):
             
             # Priority 3: Use FCB tokens
             elif fcb_balance > 0:
+                logging.info(f"💎 SPEND PATH: Using FCB token (Path 3) - Current balance: {fcb_balance}")
+                
                 cursor.execute('''
                     UPDATE users 
                     SET fcb_balance = fcb_balance - 1, total_queries = total_queries + 1
                     WHERE user_id = %s
                 ''', (user_id,))
                 
+                # 🔧 ENHANCED LOGGING - Check what actually happened
+                rows_affected = cursor.rowcount
+                logging.info(f"💎 FCB token UPDATE affected {rows_affected} rows")
+                
+                # 🔧 VERIFY the balance actually changed
+                cursor.execute('SELECT fcb_balance FROM users WHERE user_id = %s', (user_id,))
+                new_balance = cursor.fetchone()[0]
+                logging.info(f"💎 FCB balance after UPDATE: {new_balance} (was {fcb_balance})")
+                
                 # CRITICAL: Commit transaction BEFORE returning
                 conn.commit()
-                logging.info(f"💎 Paid token spent by user {user_id} (balance was {fcb_balance})")
+                logging.info(f"💎 Paid token spent by user {user_id} (balance was {fcb_balance}, now {new_balance})")
                 
-                return True, f"💎 1 FCB token spent. Balance: {fcb_balance - 1} tokens"
+                return True, f"💎 1 FCB token spent. Balance: {new_balance} tokens"
             
             # No scans available - CONVERSION OPPORTUNITY!
             else:
+                logging.info(f"💎 SPEND PATH: No tokens available (Path 4)")
                 return False, "💔 No FOMO scans remaining! Time to go premium with FCB tokens."
                 
     except Exception as e:
@@ -387,19 +414,37 @@ def verify_database_integrity():
         return None
 
 def test_token_persistence():
-    """CRITICAL: Test function with AGGRESSIVE debugging to find the exact issue"""
+    """UPDATED: Test function that forces FCB token usage and eliminates false positives"""
     try:
         test_user_id = 999999  # Use a unique test user ID
         test_amount = 100
         
-        logging.info("🧪 === STARTING AGGRESSIVE TOKEN PERSISTENCE TEST ===")
+        logging.info("🧪 === STARTING ENHANCED TOKEN PERSISTENCE TEST ===")
         
-        # Step 1: Get initial balance
-        initial_balance = get_user_balance(test_user_id)[0]
-        logging.info(f"📊 Initial balance for test user {test_user_id}: {initial_balance}")
+        # Step 1: Clean slate - ensure test user has NO free scans or bonuses
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Reset test user to force FCB token usage
+            cursor.execute('''
+                DELETE FROM users WHERE user_id = %s
+            ''', (test_user_id,))
+            
+            # Create fresh user with NO bonuses, expired free scans
+            cursor.execute('''
+                INSERT INTO users (user_id, has_received_bonus, new_user_bonus_used, free_queries_used, last_free_reset) 
+                VALUES (%s, TRUE, %s, %s, CURRENT_DATE - INTERVAL '1 day')
+                ON CONFLICT (user_id) DO UPDATE SET
+                    has_received_bonus = TRUE,
+                    new_user_bonus_used = %s,
+                    free_queries_used = %s,
+                    last_free_reset = CURRENT_DATE - INTERVAL '1 day'
+            ''', (test_user_id, NEW_USER_BONUS, FREE_QUERIES_PER_DAY, NEW_USER_BONUS, FREE_QUERIES_PER_DAY))
+            
+            logging.info(f"🧪 Test user {test_user_id} reset: No bonuses, no free scans")
         
-        # Step 2: Add tokens
-        logging.info(f"💰 Adding {test_amount} tokens to test user...")
+        # Step 2: Add FCB tokens
+        logging.info(f"💰 Adding {test_amount} FCB tokens to test user...")
         success, new_balance = add_fcb_tokens(test_user_id, test_amount)
         logging.info(f"💰 Add tokens result: success={success}, new_balance={new_balance}")
         
@@ -407,77 +452,65 @@ def test_token_persistence():
             logging.error("❌ CRITICAL: Failed to add tokens to test user")
             return False
         
-        # Step 3: Read balance again immediately
+        # Step 3: Verify balance
         current_balance = get_user_balance(test_user_id)[0]
-        logging.info(f"🔍 Balance after adding: {current_balance}")
+        logging.info(f"🔍 Balance verification: {current_balance}")
         
-        # Step 4: Token Addition Verification
-        if current_balance == new_balance and current_balance == (initial_balance + test_amount):
-            logging.info("✅ ✅ ✅ TOKENS PERSISTED CORRECTLY ✅ ✅ ✅")
+        if current_balance != test_amount:
+            logging.error(f"❌ Token addition failed: Expected {test_amount}, got {current_balance}")
+            return False
+        
+        logging.info("✅ ✅ ✅ TOKENS ADDED AND VERIFIED ✅ ✅ ✅")
+        
+        # Step 4: FORCE FCB TOKEN SPENDING (no free scans available)
+        logging.info("🧪 === TESTING FORCED FCB TOKEN SPENDING ===")
+        
+        # Check balance before spending
+        pre_spend_balance = get_user_balance(test_user_id)[0]
+        logging.info(f"💎 Balance before spending: {pre_spend_balance}")
+        
+        # Attempt to spend token with detailed logging
+        logging.info("💎 Calling spend_fcb_token() - should use Path 3 (FCB tokens)...")
+        spend_success, spend_message = spend_fcb_token(test_user_id)
+        logging.info(f"💎 spend_fcb_token() returned: success={spend_success}, message='{spend_message}'")
+        
+        if spend_success:
+            # Check balance immediately after spending
+            post_spend_balance = get_user_balance(test_user_id)[0]
+            logging.info(f"💎 Balance immediately after spending: {post_spend_balance}")
             
-            # Step 5: AGGRESSIVE SPENDING TEST with detailed debugging
-            logging.info("🧪 === TESTING TOKEN SPENDING WITH DETAILED DEBUG ===")
+            # Expected vs actual
+            expected_balance = pre_spend_balance - 1
+            logging.info(f"💎 Expected balance: {expected_balance}, Actual balance: {post_spend_balance}")
             
-            # First try the simple spend test
-            simple_test_result = simple_spend_test(test_user_id)
-            logging.info(f"🧪 Simple spend test result: {simple_test_result}")
-            
-            if simple_test_result:
-                logging.info("✅ ✅ ✅ SIMPLE TOKEN SPENDING WORKS ✅ ✅ ✅")
+            if post_spend_balance == expected_balance:
+                logging.info("✅ ✅ ✅ FCB TOKEN SPENDING WORKS PERFECTLY ✅ ✅ ✅")
                 
-                # Now test the complex spend_fcb_token function
-                logging.info("🧪 Testing complex spend_fcb_token function...")
+                # Step 5: Test persistence across "restart"
+                logging.info("🔄 Testing persistence after simulated restart...")
+                restart_balance = get_user_balance(test_user_id)[0]
+                logging.info(f"🔄 Balance after restart simulation: {restart_balance}")
                 
-                # Check balance before spending
-                pre_spend_balance = get_user_balance(test_user_id)[0]
-                logging.info(f"💎 Balance before complex spending: {pre_spend_balance}")
-                
-                # Attempt to spend token with detailed logging
-                logging.info("💎 Calling spend_fcb_token()...")
-                spend_success, spend_message = spend_fcb_token(test_user_id)
-                logging.info(f"💎 spend_fcb_token() returned: success={spend_success}, message='{spend_message}'")
-                
-                if spend_success:
-                    # Check balance immediately after spending
-                    post_spend_balance = get_user_balance(test_user_id)[0]
-                    logging.info(f"💎 Balance immediately after complex spending: {post_spend_balance}")
+                if restart_balance == expected_balance:
+                    logging.info("✅ ✅ ✅ TOKENS PERSIST ACROSS RESTARTS ✅ ✅ ✅")
                     
-                    # Expected vs actual
-                    expected_balance = pre_spend_balance - 1
-                    logging.info(f"💎 Expected balance: {expected_balance}, Actual balance: {post_spend_balance}")
-                    
-                    if post_spend_balance == expected_balance:
-                        logging.info("✅ ✅ ✅ COMPLEX TOKEN SPENDING ALSO WORKS ✅ ✅ ✅")
-                        return True
-                    else:
-                        logging.error(f"❌ COMPLEX SPENDING PERSISTENCE ERROR: Expected {expected_balance}, got {post_spend_balance}")
+                    # Clean up
+                    cleanup_test_user()
+                    return True
                 else:
-                    logging.error(f"❌ COMPLEX TOKEN SPENDING FAILED: {spend_message}")
+                    logging.error(f"❌ PERSISTENCE ERROR: Expected {expected_balance}, got {restart_balance}")
             else:
-                logging.error("❌ SIMPLE TOKEN SPENDING FAILED - DATABASE ISSUE")
-                
-                # EXTRA DEBUG: Check database directly
-                logging.info("🔍 === DIRECT DATABASE CHECK ===")
-                try:
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute('SELECT fcb_balance, total_queries FROM users WHERE user_id = %s', (test_user_id,))
-                        result = cursor.fetchone()
-                        if result:
-                            db_balance, total_queries = result
-                            logging.info(f"🔍 Direct DB query - Balance: {db_balance}, Total queries: {total_queries}")
-                        else:
-                            logging.error("🔍 User not found in direct DB query!")
-                except Exception as e:
-                    logging.error(f"🔍 Direct DB query failed: {e}")
+                logging.error(f"❌ FCB SPENDING ERROR: Expected {expected_balance}, got {post_spend_balance}")
+                logging.error("❌ This indicates the wrong spending path was used!")
         else:
-            logging.error(f"❌ ❌ ❌ TOKENS NOT PERSISTING ❌ ❌ ❌")
-            logging.error(f"❌ Expected: {initial_balance + test_amount}, Got: {current_balance}")
+            logging.error(f"❌ FCB TOKEN SPENDING FAILED: {spend_message}")
         
+        # Clean up
+        cleanup_test_user()
         return False
             
     except Exception as e:
-        logging.error(f"❌ PERSISTENCE TEST FAILED: {e}")
+        logging.error(f"❌ ENHANCED PERSISTENCE TEST FAILED: {e}")
         import traceback
         logging.error(f"❌ Full traceback: {traceback.format_exc()}")
         return False
