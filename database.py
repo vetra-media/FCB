@@ -414,87 +414,111 @@ def verify_database_integrity():
         return None
 
 def test_token_persistence():
-    """UPDATED: Test function that forces FCB token usage and eliminates false positives"""
+    """AGGRESSIVE: Test function that FORCES FCB token usage by completely resetting user state"""
     try:
         test_user_id = 999999  # Use a unique test user ID
         test_amount = 100
         
-        logging.info("🧪 === STARTING ENHANCED TOKEN PERSISTENCE TEST ===")
+        logging.info("🧪 === STARTING AGGRESSIVE TOKEN PERSISTENCE TEST ===")
         
-        # Step 1: Clean slate - ensure test user has NO free scans or bonuses
+        # Step 1: AGGRESSIVE user reset - completely delete and recreate
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Reset test user to force FCB token usage
+            # Complete deletion
+            cursor.execute('DELETE FROM users WHERE user_id = %s', (test_user_id,))
+            logging.info(f"🧪 Deleted any existing test user {test_user_id}")
+            
+            # Create user with ZERO everything - force FCB path
             cursor.execute('''
-                DELETE FROM users WHERE user_id = %s
+                INSERT INTO users (
+                    user_id, 
+                    fcb_balance, 
+                    has_received_bonus, 
+                    new_user_bonus_used, 
+                    free_queries_used, 
+                    last_free_reset,
+                    total_queries
+                ) VALUES (%s, 0, TRUE, %s, %s, CURRENT_DATE, 0)
+            ''', (test_user_id, NEW_USER_BONUS, FREE_QUERIES_PER_DAY))
+            
+            # Verify the user state
+            cursor.execute('''
+                SELECT fcb_balance, free_queries_used, new_user_bonus_used, has_received_bonus, last_free_reset
+                FROM users WHERE user_id = %s
             ''', (test_user_id,))
             
-            # Create fresh user with NO bonuses, expired free scans
-            cursor.execute('''
-                INSERT INTO users (user_id, has_received_bonus, new_user_bonus_used, free_queries_used, last_free_reset) 
-                VALUES (%s, TRUE, %s, %s, CURRENT_DATE - INTERVAL '1 day')
-                ON CONFLICT (user_id) DO UPDATE SET
-                    has_received_bonus = TRUE,
-                    new_user_bonus_used = %s,
-                    free_queries_used = %s,
-                    last_free_reset = CURRENT_DATE - INTERVAL '1 day'
-            ''', (test_user_id, NEW_USER_BONUS, FREE_QUERIES_PER_DAY, NEW_USER_BONUS, FREE_QUERIES_PER_DAY))
-            
-            logging.info(f"🧪 Test user {test_user_id} reset: No bonuses, no free scans")
+            result = cursor.fetchone()
+            if result:
+                fcb, free_used, bonus_used, has_bonus, last_reset = result
+                logging.info(f"🧪 Test user created: FCB={fcb}, Free={free_used}/{FREE_QUERIES_PER_DAY}, Bonus={bonus_used}/{NEW_USER_BONUS}, HasBonus={has_bonus}")
+            else:
+                logging.error("❌ Failed to create test user")
+                return False
         
         # Step 2: Add FCB tokens
         logging.info(f"💰 Adding {test_amount} FCB tokens to test user...")
         success, new_balance = add_fcb_tokens(test_user_id, test_amount)
         logging.info(f"💰 Add tokens result: success={success}, new_balance={new_balance}")
         
-        if not success:
+        if not success or new_balance != test_amount:
             logging.error("❌ CRITICAL: Failed to add tokens to test user")
             return False
         
-        # Step 3: Verify balance
-        current_balance = get_user_balance(test_user_id)[0]
-        logging.info(f"🔍 Balance verification: {current_balance}")
+        # Step 3: Double-check user state before spending
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT fcb_balance, free_queries_used, new_user_bonus_used, has_received_bonus,
+                       (free_queries_used < %s) as has_free_scans,
+                       (NOT has_received_bonus AND new_user_bonus_used < %s) as has_bonus_scans
+                FROM users WHERE user_id = %s
+            ''', (FREE_QUERIES_PER_DAY, NEW_USER_BONUS, test_user_id))
+            
+            result = cursor.fetchone()
+            if result:
+                fcb, free_used, bonus_used, has_bonus, has_free, has_bonus_scans = result
+                logging.info(f"🔍 Pre-spend state: FCB={fcb}, Free={free_used}/{FREE_QUERIES_PER_DAY}, Bonus={bonus_used}/{NEW_USER_BONUS}")
+                logging.info(f"🔍 Available scans: Free={has_free}, Bonus={has_bonus_scans}, Should use FCB={not has_free and not has_bonus_scans}")
+                
+                if has_free or has_bonus_scans:
+                    logging.error(f"❌ TEST SETUP FAILED: User still has free scans available!")
+                    logging.error(f"❌ This will cause spend_fcb_token() to use wrong path")
+                    return False
         
-        if current_balance != test_amount:
-            logging.error(f"❌ Token addition failed: Expected {test_amount}, got {current_balance}")
-            return False
+        logging.info("✅ Test user properly configured - NO free scans available")
         
-        logging.info("✅ ✅ ✅ TOKENS ADDED AND VERIFIED ✅ ✅ ✅")
-        
-        # Step 4: FORCE FCB TOKEN SPENDING (no free scans available)
+        # Step 4: FORCE FCB TOKEN SPENDING
         logging.info("🧪 === TESTING FORCED FCB TOKEN SPENDING ===")
         
         # Check balance before spending
         pre_spend_balance = get_user_balance(test_user_id)[0]
         logging.info(f"💎 Balance before spending: {pre_spend_balance}")
         
-        # Attempt to spend token with detailed logging
-        logging.info("💎 Calling spend_fcb_token() - should use Path 3 (FCB tokens)...")
+        # Attempt to spend token
+        logging.info("💎 Calling spend_fcb_token() - MUST use Path 3 (FCB tokens)...")
         spend_success, spend_message = spend_fcb_token(test_user_id)
         logging.info(f"💎 spend_fcb_token() returned: success={spend_success}, message='{spend_message}'")
         
         if spend_success:
             # Check balance immediately after spending
             post_spend_balance = get_user_balance(test_user_id)[0]
-            logging.info(f"💎 Balance immediately after spending: {post_spend_balance}")
+            logging.info(f"💎 Balance after spending: {post_spend_balance}")
             
             # Expected vs actual
             expected_balance = pre_spend_balance - 1
-            logging.info(f"💎 Expected balance: {expected_balance}, Actual balance: {post_spend_balance}")
+            logging.info(f"💎 Expected: {expected_balance}, Actual: {post_spend_balance}")
             
             if post_spend_balance == expected_balance:
                 logging.info("✅ ✅ ✅ FCB TOKEN SPENDING WORKS PERFECTLY ✅ ✅ ✅")
                 
-                # Step 5: Test persistence across "restart"
-                logging.info("🔄 Testing persistence after simulated restart...")
+                # Step 5: Test persistence
+                logging.info("🔄 Testing persistence...")
                 restart_balance = get_user_balance(test_user_id)[0]
-                logging.info(f"🔄 Balance after restart simulation: {restart_balance}")
                 
                 if restart_balance == expected_balance:
-                    logging.info("✅ ✅ ✅ TOKENS PERSIST ACROSS RESTARTS ✅ ✅ ✅")
-                    
-                    # Clean up
+                    logging.info("✅ ✅ ✅ TOKENS PERSIST CORRECTLY ✅ ✅ ✅")
+                    logging.info("🎉 🎉 🎉 ALL TESTS PASSED - SYSTEM WORKING 🎉 🎉 🎉")
                     cleanup_test_user()
                     return True
                 else:
@@ -505,14 +529,15 @@ def test_token_persistence():
         else:
             logging.error(f"❌ FCB TOKEN SPENDING FAILED: {spend_message}")
         
-        # Clean up
+        # Clean up on failure
         cleanup_test_user()
         return False
             
     except Exception as e:
-        logging.error(f"❌ ENHANCED PERSISTENCE TEST FAILED: {e}")
+        logging.error(f"❌ AGGRESSIVE PERSISTENCE TEST FAILED: {e}")
         import traceback
         logging.error(f"❌ Full traceback: {traceback.format_exc()}")
+        cleanup_test_user()
         return False
 
 def simple_spend_test(user_id):
