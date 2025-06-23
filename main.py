@@ -4,7 +4,10 @@ from database import (
     get_user_balance, 
     spend_fcb_token, 
     add_fcb_tokens, 
-    check_rate_limit_with_fcb
+    check_rate_limit_with_fcb,
+    initialize_connection_pool, 
+    close_connection_pool,
+    test_performance_improvement
 )
 print("database imported")
 
@@ -100,6 +103,17 @@ async def start_bot_only():
         logger.error(f"❌ Config validation failed: {e}")
         return None
     
+    # Initialize connection pool first
+    print("🔍 DEBUG: About to initialize connection pool...")
+    try:
+        initialize_connection_pool()
+        print("🔍 DEBUG: Connection pool initialized")
+        logger.info("✅ Connection pool initialized")
+    except Exception as e:
+        print(f"🔍 DEBUG: Connection pool init failed: {e}")
+        logger.error(f"❌ Connection pool init failed: {e}")
+        return None
+    
     # Initialize database  
     print("🔍 DEBUG: About to init database...")
     try:
@@ -107,6 +121,11 @@ async def start_bot_only():
         print("🔍 DEBUG: init_user_db() completed")
         logger.info("✅ Database initialized")
         print("🔍 DEBUG: Database init logged")
+        
+        # Test performance improvement
+        print("🔍 DEBUG: Testing performance...")
+        test_performance_improvement()
+        
     except Exception as e:
         print(f"🔍 DEBUG: Database init failed: {e}")
         logger.error(f"❌ Database init failed: {e}")
@@ -290,6 +309,11 @@ async def main():
         # Clean shutdown
         if scheduler:
             scheduler.shutdown()
+        
+        # Close connection pool
+        print("🔍 DEBUG: Closing connection pool...")
+        close_connection_pool()
+        
         await app.stop()
 
 if __name__ == '__main__':

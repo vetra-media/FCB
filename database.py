@@ -7,9 +7,11 @@ OPTIMIZED FOR RENDER DEPLOYMENT WITH PERSISTENCE TESTING
 import logging
 import os
 import psycopg2
+import psycopg2.pool
 import psycopg2.extras
 import time
 from contextlib import contextmanager
+import threading
 
 # FCB Token Configuration
 FREE_QUERIES_PER_DAY = 5
@@ -18,31 +20,110 @@ NEW_USER_BONUS = 3
 # Rate limiting storage
 user_last_request = {}
 
+# Global connection pool - initialize once, reuse many times
+_connection_pool = None
+_pool_lock = threading.Lock()
+
+def initialize_connection_pool():
+    """Initialize the connection pool once at startup"""
+    global _connection_pool
+    
+    if _connection_pool is None:
+        with _pool_lock:
+            if _connection_pool is None:  # Double-check locking
+                database_url = os.getenv("DATABASE_URL")
+                if not database_url:
+                    raise Exception("DATABASE_URL environment variable not set")
+                
+                # Parse connection parameters from DATABASE_URL
+                import urllib.parse as urlparse
+                parsed = urlparse.urlparse(database_url)
+                
+                try:
+                    # Create connection pool with optimal settings
+                    _connection_pool = psycopg2.pool.SimpleConnectionPool(
+                        minconn=2,      # Minimum connections (always ready)
+                        maxconn=10,     # Maximum connections (scale with load)
+                        host=parsed.hostname,
+                        port=parsed.port,
+                        user=parsed.username,
+                        password=parsed.password,
+                        database=parsed.path[1:],  # Remove leading '/'
+                        sslmode='require'
+                    )
+                    
+                    logging.info("🚀 Connection pool created successfully: 2-10 connections")
+                    
+                    # Test the pool with autocommit
+                    test_connection = _connection_pool.getconn()
+                    test_connection.autocommit = True  # Enable autocommit for reliability
+                    _connection_pool.putconn(test_connection)
+                    
+                    logging.info("✅ Connection pool tested successfully with autocommit")
+                    
+                except Exception as e:
+                    logging.error(f"❌ Failed to create connection pool: {e}")
+                    raise
+
 @contextmanager
 def get_db_connection():
-    """PostgreSQL connection context manager with enhanced error handling"""
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        raise Exception("DATABASE_URL environment variable not set")
+    """OPTIMIZED: Get pooled connection with autocommit for speed + reliability"""
+    global _connection_pool
+    
+    # Initialize pool if needed (thread-safe)
+    if _connection_pool is None:
+        initialize_connection_pool()
     
     conn = None
     try:
-        conn = psycopg2.connect(database_url, sslmode='require')
-        conn.autocommit = True  # ✅ CRITICAL FIX: Enable autocommit for cloud deployment
+        # Get connection from pool (FAST - no new process creation)
+        conn = _connection_pool.getconn()
+        
+        if conn is None:
+            raise Exception("No connections available in pool")
+        
+        # Enable autocommit for immediate persistence (RELIABLE)
+        conn.autocommit = True
+        
         yield conn
+        
     except Exception as e:
         if conn:
-            conn.rollback()
+            # Return potentially corrupted connection to pool for cleanup
+            try:
+                _connection_pool.putconn(conn)
+            except:
+                pass  # Pool will handle cleanup
         logging.error(f"❌ Database connection error: {e}")
         raise
     finally:
         if conn:
-            conn.close()
+            # Return connection to pool for reuse (FAST future operations)
+            try:
+                _connection_pool.putconn(conn)
+            except Exception as e:
+                logging.error(f"❌ Error returning connection to pool: {e}")
+
+def close_connection_pool():
+    """Close all connections in the pool (call on shutdown)"""
+    global _connection_pool
+    
+    if _connection_pool:
+        try:
+            _connection_pool.closeall()
+            logging.info("🔒 Connection pool closed successfully")
+        except Exception as e:
+            logging.error(f"❌ Error closing connection pool: {e}")
+        finally:
+            _connection_pool = None
 
 def init_user_db():
     """Initialize user database with PostgreSQL"""
     try:
-        logging.info("🔍 Initializing PostgreSQL database...")
+        logging.info("🔍 Initializing PostgreSQL database with connection pool...")
+        
+        # Initialize the connection pool first
+        initialize_connection_pool()
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -604,3 +685,29 @@ def cleanup_test_user():
             logging.info("🧹 Test user cleaned up")
     except Exception as e:
         logging.error(f"❌ Test cleanup failed: {e}")
+
+def test_performance_improvement():
+    """Test the performance improvement of connection pooling"""
+    import time
+    
+    logging.info("🧪 Testing connection pool performance...")
+    
+    # Test connection pool speed
+    start_time = time.time()
+    for i in range(10):
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT 1')
+            result = cursor.fetchone()
+    pool_time = time.time() - start_time
+    
+    logging.info(f"⚡ Connection pool: 10 operations in {pool_time:.3f}s ({pool_time/10*1000:.1f}ms per operation)")
+    
+    # Performance target achieved if under 500ms per operation
+    avg_time_ms = (pool_time / 10) * 1000
+    if avg_time_ms < 500:
+        logging.info(f"✅ PERFORMANCE TARGET ACHIEVED: {avg_time_ms:.1f}ms < 500ms")
+    else:
+        logging.warning(f"⚠️ Performance target missed: {avg_time_ms:.1f}ms > 500ms")
+    
+    return avg_time_ms
