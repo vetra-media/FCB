@@ -482,13 +482,67 @@ def test_token_persistence():
         logging.error(f"❌ Full traceback: {traceback.format_exc()}")
         return False
 
+def simple_spend_test(user_id):
+    """SIMPLE test to spend exactly 1 token with minimal logic"""
+    try:
+        logging.info(f"🧪 === SIMPLE SPEND TEST for user {user_id} ===")
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Step 1: Check current balance
+            cursor.execute('SELECT fcb_balance FROM users WHERE user_id = %s', (user_id,))
+            result = cursor.fetchone()
+            if not result:
+                logging.error("❌ User not found for simple spend test")
+                return False
+                
+            current_balance = result[0]
+            logging.info(f"💰 Current balance in simple test: {current_balance}")
+            
+            if current_balance <= 0:
+                logging.error("❌ No tokens to spend in simple test")
+                return False
+            
+            # Step 2: Subtract 1 token
+            cursor.execute('''
+                UPDATE users 
+                SET fcb_balance = fcb_balance - 1, total_queries = total_queries + 1
+                WHERE user_id = %s
+            ''', (user_id,))
+            
+            # Step 3: Check rows affected
+            rows_affected = cursor.rowcount
+            logging.info(f"💰 Rows affected by UPDATE: {rows_affected}")
+            
+            # With autocommit=True, no need to manually commit
+            logging.info("💰 Transaction auto-committed")
+            
+            # Step 4: Verify immediately in same connection
+            cursor.execute('SELECT fcb_balance FROM users WHERE user_id = %s', (user_id,))
+            result = cursor.fetchone()
+            new_balance = result[0] if result else None
+            logging.info(f"💰 Balance after update (same connection): {new_balance}")
+            
+            expected_balance = current_balance - 1
+            if new_balance == expected_balance:
+                logging.info("✅ SIMPLE SPEND TEST PASSED")
+                return True
+            else:
+                logging.error(f"❌ SIMPLE SPEND TEST FAILED: Expected {expected_balance}, got {new_balance}")
+                return False
+                
+    except Exception as e:
+        logging.error(f"❌ Simple spend test failed: {e}")
+        return False
+
 def cleanup_test_user():
     """Clean up test user after testing"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM users WHERE user_id = 999999")
-            conn.commit()
+            # With autocommit=True, no need to manually commit
             logging.info("🧹 Test user cleaned up")
     except Exception as e:
         logging.error(f"❌ Test cleanup failed: {e}")
