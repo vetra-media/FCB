@@ -135,12 +135,29 @@ def get_user_balance(user_id):
         return 0, 0, 0, 0, False
 
 def spend_fcb_token(user_id):
-    """Optimized spending with FOMO language"""
+    """Optimized spending with FOMO language - FIXED VERSION"""
     try:
-        fcb_balance, free_queries_used, new_user_bonus_used, total_free_remaining, has_received_bonus = get_user_balance(user_id)
-        
+        # Get fresh balance data in the same transaction
         with get_db_connection() as conn:
             cursor = conn.cursor()
+            
+            # Get current user state in a single transaction
+            cursor.execute('''
+                SELECT fcb_balance, free_queries_used, new_user_bonus_used, has_received_bonus 
+                FROM users WHERE user_id = %s
+            ''', (user_id,))
+            
+            result = cursor.fetchone()
+            if not result:
+                # Create user if doesn't exist
+                cursor.execute('''
+                    INSERT INTO users (user_id, has_received_bonus) 
+                    VALUES (%s, FALSE) 
+                    ON CONFLICT (user_id) DO NOTHING
+                ''', (user_id,))
+                fcb_balance, free_queries_used, new_user_bonus_used, has_received_bonus = 0, 0, 0, False
+            else:
+                fcb_balance, free_queries_used, new_user_bonus_used, has_received_bonus = result
             
             # Priority 1: Use new user bonus first (creates instant engagement)
             if not has_received_bonus and new_user_bonus_used < NEW_USER_BONUS:
@@ -155,9 +172,9 @@ def spend_fcb_token(user_id):
                     WHERE user_id = %s
                 ''', (NEW_USER_BONUS, user_id))
                 
-                # CRITICAL: Commit transaction
+                # CRITICAL: Commit transaction BEFORE returning
                 conn.commit()
-                logging.info(f"💎 Token spent by user {user_id} (bonus)")
+                logging.info(f"💎 Bonus token spent by user {user_id}")
                 
                 remaining_bonus = NEW_USER_BONUS - (new_user_bonus_used + 1)
                 daily_remaining = max(0, FREE_QUERIES_PER_DAY - free_queries_used)
@@ -175,9 +192,9 @@ def spend_fcb_token(user_id):
                     WHERE user_id = %s
                 ''', (user_id,))
                 
-                # CRITICAL: Commit transaction
+                # CRITICAL: Commit transaction BEFORE returning
                 conn.commit()
-                logging.info(f"💎 Token spent by user {user_id} (free)")
+                logging.info(f"💎 Free token spent by user {user_id}")
                 
                 remaining_free = FREE_QUERIES_PER_DAY - (free_queries_used + 1)
                 if remaining_free > 0:
@@ -193,9 +210,9 @@ def spend_fcb_token(user_id):
                     WHERE user_id = %s
                 ''', (user_id,))
                 
-                # CRITICAL: Commit transaction
+                # CRITICAL: Commit transaction BEFORE returning
                 conn.commit()
-                logging.info(f"💎 Token spent by user {user_id} (paid)")
+                logging.info(f"💎 Paid token spent by user {user_id} (balance was {fcb_balance})")
                 
                 return True, f"💎 1 FCB token spent. Balance: {fcb_balance - 1} tokens"
             
@@ -204,7 +221,7 @@ def spend_fcb_token(user_id):
                 return False, "💔 No FOMO scans remaining! Time to go premium with FCB tokens."
                 
     except Exception as e:
-        logging.error(f"Database error in spend_fcb_token: {e}")
+        logging.error(f"❌ Database error in spend_fcb_token for user {user_id}: {e}")
         return False, "❌ Database error. Please try again."
 
 def add_fcb_tokens(user_id, amount):
