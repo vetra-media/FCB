@@ -28,8 +28,7 @@ def get_db_connection():
     conn = None
     try:
         conn = psycopg2.connect(database_url, sslmode='require')
-        # Keep manual transaction control for better debugging
-        conn.autocommit = False
+        conn.autocommit = True  # ✅ CRITICAL FIX: Enable autocommit for cloud deployment
         yield conn
     except Exception as e:
         if conn:
@@ -388,12 +387,12 @@ def verify_database_integrity():
         return None
 
 def test_token_persistence():
-    """CRITICAL: Test function to verify token persistence - runs automatically on startup"""
+    """CRITICAL: Test function with AGGRESSIVE debugging to find the exact issue"""
     try:
         test_user_id = 999999  # Use a unique test user ID
         test_amount = 100
         
-        logging.info("🧪 === STARTING TOKEN PERSISTENCE TEST ===")
+        logging.info("🧪 === STARTING AGGRESSIVE TOKEN PERSISTENCE TEST ===")
         
         # Step 1: Get initial balance
         initial_balance = get_user_balance(test_user_id)[0]
@@ -412,22 +411,65 @@ def test_token_persistence():
         current_balance = get_user_balance(test_user_id)[0]
         logging.info(f"🔍 Balance after adding: {current_balance}")
         
-        # Step 4: Verification
+        # Step 4: Token Addition Verification
         if current_balance == new_balance and current_balance == (initial_balance + test_amount):
             logging.info("✅ ✅ ✅ TOKENS PERSISTED CORRECTLY ✅ ✅ ✅")
             
-            # Step 5: Test token spending
-            spend_success, spend_message = spend_fcb_token(test_user_id)
-            if spend_success:
-                final_balance = get_user_balance(test_user_id)[0]
-                logging.info(f"💎 Token spent successfully. Final balance: {final_balance}")
-                if final_balance == current_balance - 1:
-                    logging.info("✅ ✅ ✅ TOKEN SPENDING ALSO WORKS ✅ ✅ ✅")
-                    return True
+            # Step 5: AGGRESSIVE SPENDING TEST with detailed debugging
+            logging.info("🧪 === TESTING TOKEN SPENDING WITH DETAILED DEBUG ===")
+            
+            # First try the simple spend test
+            simple_test_result = simple_spend_test(test_user_id)
+            logging.info(f"🧪 Simple spend test result: {simple_test_result}")
+            
+            if simple_test_result:
+                logging.info("✅ ✅ ✅ SIMPLE TOKEN SPENDING WORKS ✅ ✅ ✅")
+                
+                # Now test the complex spend_fcb_token function
+                logging.info("🧪 Testing complex spend_fcb_token function...")
+                
+                # Check balance before spending
+                pre_spend_balance = get_user_balance(test_user_id)[0]
+                logging.info(f"💎 Balance before complex spending: {pre_spend_balance}")
+                
+                # Attempt to spend token with detailed logging
+                logging.info("💎 Calling spend_fcb_token()...")
+                spend_success, spend_message = spend_fcb_token(test_user_id)
+                logging.info(f"💎 spend_fcb_token() returned: success={spend_success}, message='{spend_message}'")
+                
+                if spend_success:
+                    # Check balance immediately after spending
+                    post_spend_balance = get_user_balance(test_user_id)[0]
+                    logging.info(f"💎 Balance immediately after complex spending: {post_spend_balance}")
+                    
+                    # Expected vs actual
+                    expected_balance = pre_spend_balance - 1
+                    logging.info(f"💎 Expected balance: {expected_balance}, Actual balance: {post_spend_balance}")
+                    
+                    if post_spend_balance == expected_balance:
+                        logging.info("✅ ✅ ✅ COMPLEX TOKEN SPENDING ALSO WORKS ✅ ✅ ✅")
+                        return True
+                    else:
+                        logging.error(f"❌ COMPLEX SPENDING PERSISTENCE ERROR: Expected {expected_balance}, got {post_spend_balance}")
                 else:
-                    logging.error(f"❌ TOKEN SPENDING PERSISTENCE ERROR: Expected {current_balance - 1}, got {final_balance}")
+                    logging.error(f"❌ COMPLEX TOKEN SPENDING FAILED: {spend_message}")
             else:
-                logging.error(f"❌ TOKEN SPENDING FAILED: {spend_message}")
+                logging.error("❌ SIMPLE TOKEN SPENDING FAILED - DATABASE ISSUE")
+                
+                # EXTRA DEBUG: Check database directly
+                logging.info("🔍 === DIRECT DATABASE CHECK ===")
+                try:
+                    with get_db_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute('SELECT fcb_balance, total_queries FROM users WHERE user_id = %s', (test_user_id,))
+                        result = cursor.fetchone()
+                        if result:
+                            db_balance, total_queries = result
+                            logging.info(f"🔍 Direct DB query - Balance: {db_balance}, Total queries: {total_queries}")
+                        else:
+                            logging.error("🔍 User not found in direct DB query!")
+                except Exception as e:
+                    logging.error(f"🔍 Direct DB query failed: {e}")
         else:
             logging.error(f"❌ ❌ ❌ TOKENS NOT PERSISTING ❌ ❌ ❌")
             logging.error(f"❌ Expected: {initial_balance + test_amount}, Got: {current_balance}")
@@ -436,6 +478,8 @@ def test_token_persistence():
             
     except Exception as e:
         logging.error(f"❌ PERSISTENCE TEST FAILED: {e}")
+        import traceback
+        logging.error(f"❌ Full traceback: {traceback.format_exc()}")
         return False
 
 def cleanup_test_user():
