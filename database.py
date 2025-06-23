@@ -1,6 +1,7 @@
 """
 Database module for CFB (Crypto FOMO Bot)
 Handles user management, FCB tokens, and rate limiting - PostgreSQL Version
+OPTIMIZED FOR RENDER DEPLOYMENT WITH PERSISTENCE TESTING
 """
 
 import logging
@@ -19,16 +20,25 @@ user_last_request = {}
 
 @contextmanager
 def get_db_connection():
-    """PostgreSQL connection context manager"""
+    """PostgreSQL connection context manager with enhanced error handling"""
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
         raise Exception("DATABASE_URL environment variable not set")
     
-    conn = psycopg2.connect(database_url)
+    conn = None
     try:
+        conn = psycopg2.connect(database_url, sslmode='require')
+        # Keep manual transaction control for better debugging
+        conn.autocommit = False
         yield conn
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logging.error(f"❌ Database connection error: {e}")
+        raise
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 def init_user_db():
     """Initialize user database with PostgreSQL"""
@@ -62,6 +72,7 @@ def init_user_db():
                 CREATE INDEX IF NOT EXISTS idx_last_reset ON users(last_free_reset)
             ''')
             
+            # CRITICAL: Explicit commit for table creation
             conn.commit()
             
             # Log database info for debugging
@@ -69,6 +80,9 @@ def init_user_db():
             user_count = cursor.fetchone()[0]
             logging.info(f"✅ PostgreSQL database initialized successfully")
             logging.info(f"📊 Current user count: {user_count}")
+            
+            # Test persistence immediately after initialization
+            test_token_persistence()
             
     except Exception as e:
         logging.error(f"❌ Error initializing database: {e}")
@@ -100,6 +114,8 @@ def get_user_balance(user_id):
             ''', (user_id,))
             
             result = cursor.fetchone()
+            
+            # CRITICAL: Commit all changes
             conn.commit()
             
             if result:
@@ -138,7 +154,10 @@ def spend_fcb_token(user_id):
                         END
                     WHERE user_id = %s
                 ''', (NEW_USER_BONUS, user_id))
+                
+                # CRITICAL: Commit transaction
                 conn.commit()
+                logging.info(f"💎 Token spent by user {user_id} (bonus)")
                 
                 remaining_bonus = NEW_USER_BONUS - (new_user_bonus_used + 1)
                 daily_remaining = max(0, FREE_QUERIES_PER_DAY - free_queries_used)
@@ -155,7 +174,10 @@ def spend_fcb_token(user_id):
                     SET free_queries_used = free_queries_used + 1, total_queries = total_queries + 1
                     WHERE user_id = %s
                 ''', (user_id,))
+                
+                # CRITICAL: Commit transaction
                 conn.commit()
+                logging.info(f"💎 Token spent by user {user_id} (free)")
                 
                 remaining_free = FREE_QUERIES_PER_DAY - (free_queries_used + 1)
                 if remaining_free > 0:
@@ -170,7 +192,11 @@ def spend_fcb_token(user_id):
                     SET fcb_balance = fcb_balance - 1, total_queries = total_queries + 1
                     WHERE user_id = %s
                 ''', (user_id,))
+                
+                # CRITICAL: Commit transaction
                 conn.commit()
+                logging.info(f"💎 Token spent by user {user_id} (paid)")
+                
                 return True, f"💎 1 FCB token spent. Balance: {fcb_balance - 1} tokens"
             
             # No scans available - CONVERSION OPPORTUNITY!
@@ -182,7 +208,7 @@ def spend_fcb_token(user_id):
         return False, "❌ Database error. Please try again."
 
 def add_fcb_tokens(user_id, amount):
-    """Add FCB tokens to user's balance with better error handling"""
+    """Add FCB tokens to user's balance with enhanced persistence verification"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -201,17 +227,29 @@ def add_fcb_tokens(user_id, amount):
             
             # Add tokens
             cursor.execute('''
-                UPDATE users SET fcb_balance = fcb_balance + %s WHERE user_id = %s
+                UPDATE users SET fcb_balance = fcb_balance + %s, first_purchase_date = COALESCE(first_purchase_date, CURRENT_TIMESTAMP) 
+                WHERE user_id = %s
             ''', (amount, user_id))
 
-            # Verify the update worked
+            # Verify the update worked BEFORE committing
             cursor.execute('SELECT fcb_balance FROM users WHERE user_id = %s', (user_id,))
             result = cursor.fetchone()
             new_balance = result[0] if result else 0
             
+            # CRITICAL: Commit transaction
             conn.commit()
             
-            logging.info(f"✅ FCB tokens added: User {user_id}, {old_balance} → {new_balance} (+{amount})")
+            # VERIFICATION: Read balance again after commit to ensure persistence
+            cursor.execute('SELECT fcb_balance FROM users WHERE user_id = %s', (user_id,))
+            result = cursor.fetchone()
+            verified_balance = result[0] if result else 0
+            
+            logging.info(f"✅ FCB tokens added: User {user_id}, {old_balance} → {new_balance} → {verified_balance} (+{amount})")
+            
+            if verified_balance != new_balance:
+                logging.error(f"❌ PERSISTENCE ERROR: Expected {new_balance}, got {verified_balance}")
+                return False, 0
+            
             return True, new_balance
             
     except Exception as e:
@@ -270,6 +308,8 @@ def get_user_balance_detailed(user_id):
             ''', (user_id,))
             
             result = cursor.fetchone()
+            
+            # CRITICAL: Commit changes
             conn.commit()
             
             if result:
@@ -329,3 +369,65 @@ def verify_database_integrity():
     except Exception as e:
         logging.error(f"Database integrity check failed: {e}")
         return None
+
+def test_token_persistence():
+    """CRITICAL: Test function to verify token persistence - runs automatically on startup"""
+    try:
+        test_user_id = 999999  # Use a unique test user ID
+        test_amount = 100
+        
+        logging.info("🧪 === STARTING TOKEN PERSISTENCE TEST ===")
+        
+        # Step 1: Get initial balance
+        initial_balance = get_user_balance(test_user_id)[0]
+        logging.info(f"📊 Initial balance for test user {test_user_id}: {initial_balance}")
+        
+        # Step 2: Add tokens
+        logging.info(f"💰 Adding {test_amount} tokens to test user...")
+        success, new_balance = add_fcb_tokens(test_user_id, test_amount)
+        logging.info(f"💰 Add tokens result: success={success}, new_balance={new_balance}")
+        
+        if not success:
+            logging.error("❌ CRITICAL: Failed to add tokens to test user")
+            return False
+        
+        # Step 3: Read balance again immediately
+        current_balance = get_user_balance(test_user_id)[0]
+        logging.info(f"🔍 Balance after adding: {current_balance}")
+        
+        # Step 4: Verification
+        if current_balance == new_balance and current_balance == (initial_balance + test_amount):
+            logging.info("✅ ✅ ✅ TOKENS PERSISTED CORRECTLY ✅ ✅ ✅")
+            
+            # Step 5: Test token spending
+            spend_success, spend_message = spend_fcb_token(test_user_id)
+            if spend_success:
+                final_balance = get_user_balance(test_user_id)[0]
+                logging.info(f"💎 Token spent successfully. Final balance: {final_balance}")
+                if final_balance == current_balance - 1:
+                    logging.info("✅ ✅ ✅ TOKEN SPENDING ALSO WORKS ✅ ✅ ✅")
+                    return True
+                else:
+                    logging.error(f"❌ TOKEN SPENDING PERSISTENCE ERROR: Expected {current_balance - 1}, got {final_balance}")
+            else:
+                logging.error(f"❌ TOKEN SPENDING FAILED: {spend_message}")
+        else:
+            logging.error(f"❌ ❌ ❌ TOKENS NOT PERSISTING ❌ ❌ ❌")
+            logging.error(f"❌ Expected: {initial_balance + test_amount}, Got: {current_balance}")
+        
+        return False
+            
+    except Exception as e:
+        logging.error(f"❌ PERSISTENCE TEST FAILED: {e}")
+        return False
+
+def cleanup_test_user():
+    """Clean up test user after testing"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM users WHERE user_id = 999999")
+            conn.commit()
+            logging.info("🧹 Test user cleaned up")
+    except Exception as e:
+        logging.error(f"❌ Test cleanup failed: {e}")
